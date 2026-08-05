@@ -23,8 +23,27 @@ public sealed class InvoiceDto
 
     public OcrStatus OcrStatus { get; set; }
     public string? OcrRawResponse { get; set; }
+
+    /// <summary>Pozycje odczytane z faktury, gotowe do przeniesienia na listę zakupów.</summary>
+    public List<OcrLineItemDto> LineItems { get; set; } = [];
+
+    /// <summary>Ile pozycji z tej faktury trafiło już na listę zakupów.</summary>
+    public int LinkedShoppingItemsCount { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>Żądanie przeniesienia wybranych pozycji faktury na listę zakupów.</summary>
+public sealed class CreateShoppingItemsFromInvoiceRequest
+{
+    /// <summary>Pomieszczenie dla tworzonych pozycji; puste = jak na fakturze albo „Całe mieszkanie”.</summary>
+    public int? RoomId { get; set; }
+
+    /// <summary>Status tworzonych pozycji — domyślnie „Kupione”, bo faktura już jest.</summary>
+    public ShoppingStatus Status { get; set; } = ShoppingStatus.Bought;
+
+    public List<OcrLineItemDto> Items { get; set; } = [];
 }
 
 public sealed class InvoiceUpsertDto
@@ -53,6 +72,30 @@ public sealed class InvoiceUpsertDto
     public bool MarkConfirmed { get; set; } = true;
 }
 
+/// <summary>
+/// Pojedyncza pozycja odczytana z faktury — np. „Klej do płytek 25 kg”.
+/// Każda z nich może trafić na listę zakupów jako osobny wiersz.
+/// </summary>
+public sealed class OcrLineItemDto
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal? Quantity { get; set; }
+    public string? Unit { get; set; }
+    public decimal? UnitPrice { get; set; }
+    public decimal? TotalPrice { get; set; }
+
+    /// <summary>Podpowiedź kategorii z listy zakupów (Płytki, Ściany, AGD…).</summary>
+    public string? SuggestedCategoryName { get; set; }
+}
+
+/// <summary>Słowniki przekazywane modelowi, żeby podpowiadał istniejące kategorie zamiast wymyślać własne.</summary>
+public sealed record OcrCategories(
+    IReadOnlyCollection<string> Expense,
+    IReadOnlyCollection<string> Shopping)
+{
+    public static OcrCategories Empty { get; } = new([], []);
+}
+
 /// <summary>Wynik odczytu faktury przez AI — propozycja do korekty, nie prawda ostateczna.</summary>
 public sealed class OcrExtractionResult
 {
@@ -62,6 +105,9 @@ public sealed class OcrExtractionResult
     public string? Currency { get; set; }
     public DateOnly? IssueDate { get; set; }
     public string? SuggestedCategoryName { get; set; }
+
+    /// <summary>Pozycje z faktury — pusta lista, gdy dokument ma tylko sumę.</summary>
+    public List<OcrLineItemDto> LineItems { get; set; } = [];
 
     /// <summary>Surowa odpowiedź modelu — zostaje w bazie do debugowania.</summary>
     public string? RawResponse { get; set; }

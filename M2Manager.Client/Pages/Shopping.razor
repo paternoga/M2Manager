@@ -136,6 +136,7 @@
             <label for="s-room">Pomieszczenie</label>
             <select id="s-room" value="@(_roomId?.ToString() ?? "")" @onchange="OnRoomChangedAsync">
                 <option value="">Wszystkie</option>
+                <option value="@ShoppingConstants.WholePropertyRoomId">@ShoppingConstants.WholePropertyRoomName</option>
                 @foreach (var room in _rooms)
                 {
                     <option value="@room.Id">@room.Name</option>
@@ -899,7 +900,9 @@ else
         _draft = new ShoppingItemUpsertDto
         {
             PropertyId = _propertyId ?? _properties.FirstOrDefault()?.Id ?? 0,
-            RoomId = _roomId,
+
+            // Filtr „Całe mieszkanie” to wartownik, nie prawdziwe Id — nowa pozycja dostaje null.
+            RoomId = _roomId > ShoppingConstants.WholePropertyRoomId ? _roomId : null,
             ShoppingCategoryId = _categoryId,
             Status = ShoppingStatus.ToBuy,
             Priority = ShoppingPriority.MustHave

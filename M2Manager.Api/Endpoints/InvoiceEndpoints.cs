@@ -97,12 +97,18 @@ public static class InvoiceEndpoints
                 }
 
                 // Odczyt AI. Cokolwiek się stanie, zdjęcie już jest zapisane.
-                var categories = await db.ExpenseCategories
+                var expenseCategories = await db.ExpenseCategories
                     .OrderBy(c => c.SortOrder)
                     .Select(c => c.Name)
                     .ToListAsync(ct);
 
-                var extraction = await ocr.ExtractAsync(bytes, contentType, categories, ct);
+                var shoppingCategories = await db.ShoppingCategories
+                    .OrderBy(c => c.SortOrder)
+                    .Select(c => c.Name)
+                    .ToListAsync(ct);
+
+                var extraction = await ocr.ExtractAsync(
+                    bytes, contentType, new OcrCategories(expenseCategories, shoppingCategories), ct);
 
                 var invoice = new Invoice
                 {
@@ -121,6 +127,7 @@ public static class InvoiceEndpoints
                     invoice.Currency = string.IsNullOrWhiteSpace(extraction.Currency) ? "PLN" : extraction.Currency;
                     invoice.IssueDate = extraction.IssueDate;
                     invoice.ExpenseCategoryId = await MatchCategoryIdAsync(db, extraction.SuggestedCategoryName, ct);
+                    invoice.OcrLineItemsJson = Mapping.SerializeLineItems(extraction.LineItems);
                 }
                 else
                 {
@@ -133,6 +140,7 @@ public static class InvoiceEndpoints
                 await db.Entry(invoice).Reference(i => i.Property).LoadAsync(ct);
                 await db.Entry(invoice).Reference(i => i.Room).LoadAsync(ct);
                 await db.Entry(invoice).Reference(i => i.ExpenseCategory).LoadAsync(ct);
+                await db.Entry(invoice).Collection(i => i.ShoppingItems).LoadAsync(ct);
 
                 var url = await storage.GetViewUrlAsync(objectKey, ct);
                 return Results.Created($"/api/invoices/{invoice.Id}", invoice.ToDto(url));
@@ -188,6 +196,7 @@ public static class InvoiceEndpoints
                 .Include(i => i.Property)
                 .Include(i => i.Room)
                 .Include(i => i.ExpenseCategory)
+                .Include(i => i.ShoppingItems)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(i => i.Id == id, ct);
 
@@ -217,6 +226,7 @@ public static class InvoiceEndpoints
                 .Include(i => i.Property)
                 .Include(i => i.Room)
                 .Include(i => i.ExpenseCategory)
+                .Include(i => i.ShoppingItems)
                 .FirstOrDefaultAsync(i => i.Id == id, ct);
 
             if (invoice is null)
@@ -258,6 +268,103 @@ public static class InvoiceEndpoints
 
             var url = await storage.GetViewUrlAsync(invoice.ImageObjectKey, ct);
             return Results.Ok(invoice.ToDto(url));
+        });
+
+        // ---------- przeniesienie pozycji faktury na listę zakupów ----------
+        group.MapPost("/{id:int}/shopping-items", async (
+            int id,
+            CreateShoppingItemsFromInvoiceRequest request,
+            AppDbContext db,
+            CancellationToken ct) =>
+        {
+            var invoice = await db.Invoices.FirstOrDefaultAsync(i => i.Id == id, ct);
+            if (invoice is null)
+            {
+                return Results.NotFound();
+            }
+
+            var selected = request.Items
+                .Where(i => !string.IsNullOrWhiteSpace(i.Name))
+                .ToList();
+
+            if (selected.Count == 0)
+            {
+                return Results.BadRequest(new { message = "Nie wybrano żadnej pozycji." });
+            }
+
+            // Pomieszczenie z żądania ma pierwszeństwo, ale musi należeć do mieszkania z faktury.
+            var roomId = request.RoomId ?? invoice.RoomId;
+            if (roomId.HasValue &&
+                !await db.Rooms.AnyAsync(r => r.Id == roomId && r.PropertyId == invoice.PropertyId, ct))
+            {
+                return Results.BadRequest(new { message = "Pomieszczenie nie należy do mieszkania z faktury." });
+            }
+
+            var categories = await db.ShoppingCategories
+                .Select(c => new { c.Id, c.Name })
+                .ToListAsync(ct);
+
+            var ordinal = (await db.ShoppingItems
+                .Where(i => i.PropertyId == invoice.PropertyId)
+                .MaxAsync(i => (int?)i.OrdinalNo, ct) ?? 0);
+
+            var created = new List<ShoppingItem>();
+
+            foreach (var line in selected)
+            {
+                var normalized = TextNormalizer.Normalize(line.SuggestedCategoryName);
+
+                var categoryId = normalized.Length == 0
+                    ? null
+                    : categories
+                        .Where(c => TextNormalizer.Normalize(c.Name) == normalized)
+                        .Select(c => (int?)c.Id)
+                        .FirstOrDefault();
+
+                var total = line.TotalPrice
+                            ?? (line.Quantity.HasValue && line.UnitPrice.HasValue
+                                ? Math.Round(line.Quantity.Value * line.UnitPrice.Value, 2, MidpointRounding.AwayFromZero)
+                                : null);
+
+                var item = new ShoppingItem
+                {
+                    OrdinalNo = ++ordinal,
+                    PropertyId = invoice.PropertyId,
+                    RoomId = roomId,
+                    ShoppingCategoryId = categoryId,
+                    Name = line.Name.Trim(),
+                    Quantity = line.Quantity,
+                    Unit = string.IsNullOrWhiteSpace(line.Unit) ? null : line.Unit.Trim(),
+                    UnitCost = line.UnitPrice,
+                    TotalCost = total,
+
+                    // Pozycja pochodzi z faktury, więc to już wydana kwota, nie szacunek.
+                    ActualCost = total,
+                    Status = request.Status,
+                    Priority = ShoppingPriority.MustHave,
+                    PurchaseDate = invoice.IssueDate,
+                    InvoiceId = invoice.Id,
+                    Vendor = invoice.Vendor,
+                    CalculationNotes = $"Z faktury #{invoice.Id}"
+                };
+
+                db.ShoppingItems.Add(item);
+                created.Add(item);
+            }
+
+            await db.SaveChangesAsync(ct);
+
+            var ids = created.Select(i => i.Id).ToList();
+
+            var result = await db.ShoppingItems
+                .Where(i => ids.Contains(i.Id))
+                .Include(i => i.Room)
+                .Include(i => i.ShoppingCategory)
+                .Include(i => i.Invoice)
+                .AsNoTracking()
+                .ToListAsync(ct);
+
+            return Results.Ok(result.Select(i => i.ToDto()).ToList());
         });
 
         group.MapDelete("/{id:int}", async (
@@ -395,6 +502,7 @@ public static class InvoiceEndpoints
             .Include(i => i.Property)
             .Include(i => i.Room)
             .Include(i => i.ExpenseCategory)
+            .Include(i => i.ShoppingItems)
             .AsQueryable();
 
         if (propertyId.HasValue)
@@ -402,7 +510,12 @@ public static class InvoiceEndpoints
             query = query.Where(i => i.PropertyId == propertyId);
         }
 
-        if (roomId.HasValue)
+        if (roomId == ShoppingConstants.WholePropertyRoomId)
+        {
+            // „Całe mieszkanie” = faktury nieprzypisane do konkretnego pomieszczenia.
+            query = query.Where(i => i.RoomId == null);
+        }
+        else if (roomId.HasValue)
         {
             query = query.Where(i => i.RoomId == roomId);
         }

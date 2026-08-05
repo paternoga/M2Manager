@@ -41,6 +41,7 @@ public static class OcrResponseParser
                 Currency = NormalizeCurrency(ReadString(root, "currency")),
                 IssueDate = ReadDate(root, "issueDate"),
                 SuggestedCategoryName = ReadString(root, "suggestedCategoryName"),
+                LineItems = ReadLineItems(root),
                 RawResponse = modelText
             };
         }
@@ -126,6 +127,60 @@ public static class OcrResponseParser
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Pozycje faktury. Wiersz bez nazwy jest bezużyteczny na liście zakupów, więc go pomijamy;
+    /// brak tablicy „lineItems” to normalna sytuacja (paragon z samą sumą), nie błąd.
+    /// </summary>
+    internal static List<OcrLineItemDto> ReadLineItems(JsonElement root)
+    {
+        var items = new List<OcrLineItemDto>();
+
+        if (!root.TryGetProperty("lineItems", out var array) || array.ValueKind != JsonValueKind.Array)
+        {
+            return items;
+        }
+
+        foreach (var element in array.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = ReadString(element, "name");
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var quantity = ReadDecimal(element, "quantity");
+            var unitPrice = ReadDecimal(element, "unitPrice");
+            var totalPrice = ReadDecimal(element, "totalPrice");
+
+            // Modele często podają dwie z trzech wartości — trzecią doliczamy sami.
+            if (totalPrice is null && quantity is not null && unitPrice is not null)
+            {
+                totalPrice = Math.Round(quantity.Value * unitPrice.Value, 2, MidpointRounding.AwayFromZero);
+            }
+            else if (unitPrice is null && totalPrice is not null && quantity is > 0m)
+            {
+                unitPrice = Math.Round(totalPrice.Value / quantity.Value, 2, MidpointRounding.AwayFromZero);
+            }
+
+            items.Add(new OcrLineItemDto
+            {
+                Name = name,
+                Quantity = quantity,
+                Unit = ReadString(element, "unit"),
+                UnitPrice = unitPrice,
+                TotalPrice = totalPrice,
+                SuggestedCategoryName = ReadString(element, "suggestedCategoryName")
+            });
+        }
+
+        return items;
     }
 
     private static string? ReadString(JsonElement root, string name)

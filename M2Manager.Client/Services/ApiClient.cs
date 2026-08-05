@@ -148,6 +148,13 @@ public sealed class ApiClient(HttpClient http)
     public Task DeleteInvoiceAsync(int id) =>
         SendAsync(HttpMethod.Delete, $"api/invoices/{id}");
 
+    /// <summary>Przenosi wybrane pozycje faktury na listę zakupów, wiążąc je z dokumentem.</summary>
+    public Task<List<ShoppingItemDto>> CreateShoppingItemsFromInvoiceAsync(
+        int invoiceId,
+        CreateShoppingItemsFromInvoiceRequest request) =>
+        PostAsync<CreateShoppingItemsFromInvoiceRequest, List<ShoppingItemDto>>(
+            $"api/invoices/{invoiceId}/shopping-items", request);
+
     // ---------------------------------------------------------------- lista zakupów
 
     public Task<List<ShoppingItemDto>> GetShoppingItemsAsync(string queryString) =>

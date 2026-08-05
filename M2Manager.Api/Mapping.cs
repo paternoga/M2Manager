@@ -1,4 +1,6 @@
+using System.Text.Json;
 using M2Manager.Api.Data;
+using M2Manager.Shared;
 using M2Manager.Shared.Dtos;
 
 namespace M2Manager.Api;
@@ -105,9 +107,32 @@ public static class Mapping
         ImageUrl = imageUrl,
         OcrStatus = i.OcrStatus,
         OcrRawResponse = i.OcrRawResponse,
+        LineItems = ParseLineItems(i.OcrLineItemsJson),
+        LinkedShoppingItemsCount = i.ShoppingItems.Count,
         CreatedAt = i.CreatedAt,
         UpdatedAt = i.UpdatedAt
     };
+
+    /// <summary>Uszkodzony JSON pozycji nie może wywalić listy faktur — traktujemy go jak brak pozycji.</summary>
+    public static List<OcrLineItemDto> ParseLineItems(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<OcrLineItemDto>>(json, AppJson.Options) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    public static string? SerializeLineItems(List<OcrLineItemDto> items) =>
+        items.Count == 0 ? null : JsonSerializer.Serialize(items, AppJson.Options);
 
     public static ShoppingItemDto ToDto(this ShoppingItem s) => new()
     {

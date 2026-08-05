@@ -32,8 +32,9 @@
         <div>
             <label for="f-room">Pomieszczenie</label>
             <select id="f-room" value="@(_query.RoomId?.ToString() ?? "")"
-                    @onchange="async e => { _query.RoomId = ParseNullableInt(e.Value); await ReloadAsync(); }">
+                    @onchange="async e => { _query.RoomId = ParseNullableInt(e.Value); _query.Page = 1; await ReloadAsync(); }">
                 <option value="">Wszystkie</option>
+                <option value="@ShoppingConstants.WholePropertyRoomId">@ShoppingConstants.WholePropertyRoomName</option>
                 @foreach (var room in _rooms)
                 {
                     <option value="@room.Id">@room.Name</option>
@@ -198,6 +199,8 @@ else
             }
 
             <InvoiceForm Invoice="_editing" OnSaved="OnSavedAsync" OnCancel="CloseDrawer" />
+
+            <InvoiceLineItems Invoice="_editing" />
         </div>
     </div>
 }

@@ -310,7 +310,12 @@ public static class ShoppingEndpoints
             query = query.Where(i => i.PropertyId == propertyId);
         }
 
-        if (roomId.HasValue)
+        if (roomId == ShoppingConstants.WholePropertyRoomId)
+        {
+            // „Całe mieszkanie” = pozycje bez przypisanego pomieszczenia.
+            query = query.Where(i => i.RoomId == null);
+        }
+        else if (roomId.HasValue)
         {
             query = query.Where(i => i.RoomId == roomId);
         }

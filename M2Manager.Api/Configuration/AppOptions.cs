@@ -68,7 +68,9 @@ public sealed class GeminiOptions
 
     public string BaseUrl { get; set; } = "https://generativelanguage.googleapis.com";
     public string ApiVersion { get; set; } = "v1beta";
-    public int MaxOutputTokens { get; set; } = 1024;
+    /// <summary>Z rozbiciem faktury na pozycje odpowiedź bywa długa — 1024 tokeny potrafiły ją uciąć.</summary>
+    public int MaxOutputTokens { get; set; } = 4096;
+
     public int TimeoutSeconds { get; set; } = 90;
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);

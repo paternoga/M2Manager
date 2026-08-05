@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,9 @@ public sealed class GeminiOcrService(
 {
     private readonly GeminiOptions _options = options.Value;
 
+    /// <summary>Łącznie z pierwszą próbą. Trzy podejścia mieszczą się w limicie czasu uploadu.</summary>
+    private const int MaxAttempts = 3;
+
     /// <summary>
     /// Formaty przyjmowane przez Gemini. W przeciwieństwie do wielu innych API obsługuje HEIC/HEIF,
     /// czyli domyślny format zdjęć z iPhone'a — nie trzeba nic przestawiać w telefonie.
@@ -33,7 +37,7 @@ public sealed class GeminiOcrService(
     public async Task<OcrExtractionResult> ExtractAsync(
         byte[] fileBytes,
         string contentType,
-        IReadOnlyCollection<string> availableCategories,
+        OcrCategories categories,
         CancellationToken ct = default)
     {
         if (!IsEnabled)
@@ -55,54 +59,89 @@ public sealed class GeminiOcrService(
         }
 
         var url = $"{_options.ApiVersion.Trim('/')}/models/{_options.Model}:generateContent";
-        var payload = BuildRequest(fileBytes, mediaType, availableCategories);
+        var payload = BuildRequest(fileBytes, mediaType, categories);
 
-        try
+        // Darmowy tier potrafi odpowiedzieć 503 „high demand” — to stan chwilowy, więc ponawiamy.
+        // Bez tego użytkownik przepisuje fakturę ręcznie tylko dlatego, że akurat trafił na szczyt ruchu.
+        for (var attempt = 1; ; attempt++)
         {
-            using var response = await http.PostAsJsonAsync(url, payload, ct);
-            var body = await response.Content.ReadAsStringAsync(ct);
+            var lastAttempt = attempt >= MaxAttempts;
 
-            if (!response.IsSuccessStatusCode)
+            try
             {
-                var apiMessage = ExtractApiError(body);
-                logger.LogWarning("Gemini API zwróciło {Status}: {Message}", (int)response.StatusCode, apiMessage ?? body);
+                using var response = await http.PostAsJsonAsync(url, payload, ct);
+                var body = await response.Content.ReadAsStringAsync(ct);
 
-                return OcrExtractionResult.Failed(
-                    $"Gemini API zwróciło błąd {(int)response.StatusCode}: {apiMessage ?? "brak szczegółów"}. Uzupełnij dane ręcznie.",
-                    body);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var apiMessage = ExtractApiError(body);
+
+                    if (IsTransient(response.StatusCode) && !lastAttempt)
+                    {
+                        logger.LogInformation(
+                            "Gemini API zwróciło {Status} (próba {Attempt}/{Max}) — ponawiam.",
+                            (int)response.StatusCode, attempt, MaxAttempts);
+
+                        await Task.Delay(RetryDelay(attempt), ct);
+                        continue;
+                    }
+
+                    logger.LogWarning("Gemini API zwróciło {Status}: {Message}", (int)response.StatusCode, apiMessage ?? body);
+
+                    return OcrExtractionResult.Failed(
+                        $"Gemini API zwróciło błąd {(int)response.StatusCode}: {apiMessage ?? "brak szczegółów"}. Uzupełnij dane ręcznie.",
+                        body);
+                }
+
+                if (ExtractBlockReason(body) is { } blockReason)
+                {
+                    logger.LogWarning("Gemini odmówiło odpowiedzi: {Reason}", blockReason);
+                    return OcrExtractionResult.Failed(
+                        $"Model odmówił analizy zdjęcia ({blockReason}). Uzupełnij dane ręcznie.", body);
+                }
+
+                var text = ExtractTextContent(body);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return OcrExtractionResult.Failed("Odpowiedź modelu nie zawiera treści tekstowej.", body);
+                }
+
+                return OcrResponseParser.Parse(text);
             }
-
-            if (ExtractBlockReason(body) is { } blockReason)
+            catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
             {
-                logger.LogWarning("Gemini odmówiło odpowiedzi: {Reason}", blockReason);
-                return OcrExtractionResult.Failed(
-                    $"Model odmówił analizy zdjęcia ({blockReason}). Uzupełnij dane ręcznie.", body);
+                logger.LogWarning(ex, "Przekroczono czas oczekiwania na odpowiedź Gemini API.");
+                return OcrExtractionResult.Failed("Przekroczono czas oczekiwania na odpowiedź AI. Uzupełnij dane ręcznie.");
             }
-
-            var text = ExtractTextContent(body);
-            if (string.IsNullOrWhiteSpace(text))
+            catch (HttpRequestException ex)
             {
-                return OcrExtractionResult.Failed("Odpowiedź modelu nie zawiera treści tekstowej.", body);
-            }
+                if (!lastAttempt)
+                {
+                    logger.LogInformation(ex, "Błąd połączenia z Gemini (próba {Attempt}/{Max}) — ponawiam.", attempt, MaxAttempts);
+                    await Task.Delay(RetryDelay(attempt), ct);
+                    continue;
+                }
 
-            return OcrResponseParser.Parse(text);
-        }
-        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
-        {
-            logger.LogWarning(ex, "Przekroczono czas oczekiwania na odpowiedź Gemini API.");
-            return OcrExtractionResult.Failed("Przekroczono czas oczekiwania na odpowiedź AI. Uzupełnij dane ręcznie.");
-        }
-        catch (HttpRequestException ex)
-        {
-            logger.LogWarning(ex, "Błąd połączenia z Gemini API.");
-            return OcrExtractionResult.Failed($"Błąd połączenia z AI: {ex.Message}");
+                logger.LogWarning(ex, "Błąd połączenia z Gemini API.");
+                return OcrExtractionResult.Failed($"Błąd połączenia z AI: {ex.Message}");
+            }
         }
     }
+
+    /// <summary>Błędy, które warto ponowić: przeciążenie modelu i limit zapytań.</summary>
+    private static bool IsTransient(HttpStatusCode status) =>
+        status is HttpStatusCode.TooManyRequests
+            or HttpStatusCode.InternalServerError
+            or HttpStatusCode.BadGateway
+            or HttpStatusCode.ServiceUnavailable
+            or HttpStatusCode.GatewayTimeout;
+
+    private static TimeSpan RetryDelay(int attempt) => TimeSpan.FromSeconds(2 * attempt);
 
     private Dictionary<string, object> BuildRequest(
         byte[] fileBytes,
         string mediaType,
-        IReadOnlyCollection<string> categories)
+        OcrCategories categories)
     {
         var generationConfig = new Dictionary<string, object>
         {
@@ -139,11 +178,10 @@ public sealed class GeminiOcrService(
         };
     }
 
-    internal static string BuildPrompt(IReadOnlyCollection<string> categories)
+    internal static string BuildPrompt(OcrCategories categories)
     {
-        var list = categories.Count > 0
-            ? string.Join(", ", categories)
-            : "brak zdefiniowanych kategorii";
+        static string Join(IReadOnlyCollection<string> values) =>
+            values.Count > 0 ? string.Join(", ", values) : "brak zdefiniowanych kategorii";
 
         var sb = new StringBuilder();
         sb.AppendLine("Przeanalizuj załączone zdjęcie polskiej faktury lub paragonu.");
@@ -153,10 +191,30 @@ public sealed class GeminiOcrService(
         sb.AppendLine("  \"amount\": liczba (kwota brutto do zapłaty) lub null,");
         sb.AppendLine("  \"currency\": \"PLN\" lub inny kod waluty,");
         sb.AppendLine("  \"issueDate\": \"YYYY-MM-DD\" lub null,");
-        sb.AppendLine("  \"suggestedCategoryName\": \"jedna z podanych kategorii lub null\"");
+        sb.AppendLine("  \"suggestedCategoryName\": \"jedna z kategorii wydatku lub null\",");
+        sb.AppendLine("  \"lineItems\": [");
+        sb.AppendLine("    {");
+        sb.AppendLine("      \"name\": \"nazwa pozycji dokładnie jak na dokumencie\",");
+        sb.AppendLine("      \"quantity\": liczba lub null,");
+        sb.AppendLine("      \"unit\": \"szt. / m² / opak. / l / kg lub null\",");
+        sb.AppendLine("      \"unitPrice\": cena jednostkowa brutto lub null,");
+        sb.AppendLine("      \"totalPrice\": wartość brutto tej pozycji lub null,");
+        sb.AppendLine("      \"suggestedCategoryName\": \"jedna z kategorii zakupów lub null\"");
+        sb.AppendLine("    }");
+        sb.AppendLine("  ]");
         sb.AppendLine("}");
-        sb.AppendLine($"Dostępne kategorie: {list}.");
-        sb.Append("Jeśli czegoś nie da się odczytać, wstaw null. Kwota to wartość brutto (z VAT).");
+        sb.AppendLine($"Kategorie wydatku (dla całej faktury): {Join(categories.Expense)}.");
+        sb.AppendLine($"Kategorie zakupów (dla pojedynczych pozycji): {Join(categories.Shopping)}.");
+        sb.AppendLine();
+        sb.AppendLine("W \"lineItems\" wypisz KAŻDĄ pozycję dokumentu osobno — klej do płytek i płytki");
+        sb.AppendLine("to dwa różne wiersze, nawet jeśli są na jednej fakturze. Nie łącz ich i nie streszczaj.");
+        sb.AppendLine("Pomiń wiersze, które nie są towarem (podsumowania, stawki VAT, rabaty).");
+        sb.AppendLine("Kosztu dostawy NIE wypisuj jako osobnej pozycji:");
+        sb.AppendLine("— gdy dokument ma tylko jeden towar, dolicz dostawę do jego wartości,");
+        sb.AppendLine("  tak żeby \"totalPrice\" tej pozycji równał się kwocie z pola \"amount\";");
+        sb.AppendLine("— gdy towarów jest kilka, podaj każdy z jego własną ceną i dostawy nie rozdzielaj.");
+        sb.AppendLine("Gdy dokument pokazuje wyłącznie kwotę łączną, zwróć \"lineItems\": [].");
+        sb.Append("Jeśli czegoś nie da się odczytać, wstaw null. Kwoty to wartości brutto (z VAT).");
 
         return sb.ToString();
     }

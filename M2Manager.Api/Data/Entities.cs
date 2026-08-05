@@ -102,6 +102,12 @@ public class Invoice
     public OcrStatus OcrStatus { get; set; } = OcrStatus.Pending;
     public string? OcrRawResponse { get; set; }
 
+    /// <summary>
+    /// Pozycje odczytane z faktury (JSON). Trzymamy je przy dokumencie, żeby dało się
+    /// wrócić do faktury później i dopiero wtedy przenieść wybrane pozycje na listę zakupów.
+    /// </summary>
+    public string? OcrLineItemsJson { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

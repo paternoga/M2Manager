@@ -173,4 +173,111 @@ public class OcrResponseParserTests
 
         Assert.Equal(1299.00m, result.Amount);
     }
+
+    // ---------------------------------------------------------------- pozycje faktury
+
+    [Fact]
+    public void Parse_ReadsLineItemsAsSeparateEntries()
+    {
+        const string json = """
+            {
+              "vendor": "Leroy Merlin",
+              "amount": 448.70,
+              "currency": "PLN",
+              "issueDate": "2026-08-01",
+              "suggestedCategoryName": "Remont i materiały",
+              "lineItems": [
+                {"name": "Płytki gres szary 60x60", "quantity": 12, "unit": "opak.", "unitPrice": 32.90, "totalPrice": 394.80, "suggestedCategoryName": "Płytki"},
+                {"name": "Klej do płytek 25 kg", "quantity": 2, "unit": "szt.", "unitPrice": 26.95, "totalPrice": 53.90, "suggestedCategoryName": "Płytki"}
+              ]
+            }
+            """;
+
+        var result = OcrResponseParser.Parse(json);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, result.LineItems.Count);
+
+        var plytki = result.LineItems[0];
+        Assert.Equal("Płytki gres szary 60x60", plytki.Name);
+        Assert.Equal(12m, plytki.Quantity);
+        Assert.Equal("opak.", plytki.Unit);
+        Assert.Equal(32.90m, plytki.UnitPrice);
+        Assert.Equal(394.80m, plytki.TotalPrice);
+        Assert.Equal("Płytki", plytki.SuggestedCategoryName);
+
+        Assert.Equal("Klej do płytek 25 kg", result.LineItems[1].Name);
+    }
+
+    [Fact]
+    public void Parse_LineItemWithoutTotal_HasItComputed()
+    {
+        const string json = """
+            {"amount": 100, "lineItems": [{"name": "Fuga", "quantity": 3, "unitPrice": 19.99}]}
+            """;
+
+        var item = Assert.Single(OcrResponseParser.Parse(json).LineItems);
+
+        Assert.Equal(59.97m, item.TotalPrice);
+    }
+
+    [Fact]
+    public void Parse_LineItemWithoutUnitPrice_HasItComputed()
+    {
+        const string json = """
+            {"amount": 100, "lineItems": [{"name": "Silikon", "quantity": 4, "totalPrice": 63.60}]}
+            """;
+
+        var item = Assert.Single(OcrResponseParser.Parse(json).LineItems);
+
+        Assert.Equal(15.90m, item.UnitPrice);
+    }
+
+    [Fact]
+    public void Parse_LineItemsWithoutName_AreSkipped()
+    {
+        const string json = """
+            {"amount": 10, "lineItems": [{"name": "", "totalPrice": 5}, {"quantity": 1}, {"name": "Wałek", "totalPrice": 10}]}
+            """;
+
+        var item = Assert.Single(OcrResponseParser.Parse(json).LineItems);
+
+        Assert.Equal("Wałek", item.Name);
+    }
+
+    [Fact]
+    public void Parse_WithoutLineItems_ReturnsEmptyListNotFailure()
+    {
+        const string json = """{"vendor": "Biedronka", "amount": 45.30, "currency": "PLN"}""";
+
+        var result = OcrResponseParser.Parse(json);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.LineItems);
+    }
+
+    [Fact]
+    public void Parse_LineItemsAsWrongType_IsIgnored()
+    {
+        const string json = """{"amount": 10, "lineItems": "klej, płytki"}""";
+
+        var result = OcrResponseParser.Parse(json);
+
+        Assert.True(result.Success);
+        Assert.Empty(result.LineItems);
+    }
+
+    [Fact]
+    public void Parse_LineItemPricesAsPolishStrings_AreRead()
+    {
+        const string json = """
+            {"amount": 100, "lineItems": [{"name": "Grunt CT17", "quantity": "2", "unitPrice": "110,00 zł", "totalPrice": "220,00 zł"}]}
+            """;
+
+        var item = Assert.Single(OcrResponseParser.Parse(json).LineItems);
+
+        Assert.Equal(2m, item.Quantity);
+        Assert.Equal(110.00m, item.UnitPrice);
+        Assert.Equal(220.00m, item.TotalPrice);
+    }
 }

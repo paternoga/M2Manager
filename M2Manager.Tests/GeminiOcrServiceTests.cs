@@ -1,4 +1,5 @@
 using M2Manager.Api.Services;
+using M2Manager.Shared.Dtos;
 
 namespace M2Manager.Tests;
 
@@ -129,19 +130,41 @@ public class GeminiOcrServiceTests
     }
 
     [Fact]
-    public void BuildPrompt_ListsAvailableCategories()
+    public void BuildPrompt_ListsBothCategorySets()
     {
-        var prompt = GeminiOcrService.BuildPrompt(["Media (prąd, gaz, woda)", "Remont i materiały"]);
+        var prompt = GeminiOcrService.BuildPrompt(new OcrCategories(
+            ["Media (prąd, gaz, woda)", "Remont i materiały"],
+            ["Płytki", "Ściany"]));
 
-        Assert.Contains("Dostępne kategorie: Media (prąd, gaz, woda), Remont i materiały.", prompt);
+        Assert.Contains("Kategorie wydatku (dla całej faktury): Media (prąd, gaz, woda), Remont i materiały.", prompt);
+        Assert.Contains("Kategorie zakupów (dla pojedynczych pozycji): Płytki, Ściany.", prompt);
         Assert.Contains("WYŁĄCZNIE poprawny JSON", prompt);
         Assert.Contains("\"issueDate\": \"YYYY-MM-DD\"", prompt);
     }
 
     [Fact]
+    public void BuildPrompt_AsksToSplitEveryLineItem()
+    {
+        var prompt = GeminiOcrService.BuildPrompt(OcrCategories.Empty);
+
+        Assert.Contains("lineItems", prompt);
+        Assert.Contains("KAŻDĄ pozycję dokumentu osobno", prompt);
+        Assert.Contains("klej do płytek i płytki", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_TellsModelNotToListDeliverySeparately()
+    {
+        var prompt = GeminiOcrService.BuildPrompt(OcrCategories.Empty);
+
+        Assert.Contains("Kosztu dostawy NIE wypisuj jako osobnej pozycji", prompt);
+        Assert.Contains("dolicz dostawę do jego wartości", prompt);
+    }
+
+    [Fact]
     public void BuildPrompt_WithoutCategories_StillProducesValidInstruction()
     {
-        var prompt = GeminiOcrService.BuildPrompt([]);
+        var prompt = GeminiOcrService.BuildPrompt(OcrCategories.Empty);
 
         Assert.Contains("brak zdefiniowanych kategorii", prompt);
     }

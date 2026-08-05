@@ -136,4 +136,11 @@ public static class ShoppingConstants
 {
     /// <summary>Wartość w kolumnie „Pomieszczenie” oznaczająca pozycję nieprzypisaną do pokoju.</summary>
     public const string WholePropertyRoomName = "Całe mieszkanie";
+
+    /// <summary>
+    /// Wartownik w filtrach: „pokaż tylko pozycje bez przypisanego pomieszczenia”.
+    /// Zwykłe pominięcie parametru znaczy „wszystkie pomieszczenia”, więc potrzebna jest
+    /// osobna wartość — żadne pomieszczenie nie ma Id = 0.
+    /// </summary>
+    public const int WholePropertyRoomId = 0;
 }

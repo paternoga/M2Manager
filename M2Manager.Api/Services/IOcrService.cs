@@ -10,7 +10,7 @@ public interface IOcrService
     Task<OcrExtractionResult> ExtractAsync(
         byte[] fileBytes,
         string contentType,
-        IReadOnlyCollection<string> availableCategories,
+        OcrCategories categories,
         CancellationToken ct = default);
 }
 
@@ -22,7 +22,7 @@ public sealed class DisabledOcrService : IOcrService
     public Task<OcrExtractionResult> ExtractAsync(
         byte[] fileBytes,
         string contentType,
-        IReadOnlyCollection<string> availableCategories,
+        OcrCategories categories,
         CancellationToken ct = default) =>
         Task.FromResult(OcrExtractionResult.Failed(
             "Automatyczny odczyt jest wyłączony (brak Gemini__ApiKey). Uzupełnij dane ręcznie."));

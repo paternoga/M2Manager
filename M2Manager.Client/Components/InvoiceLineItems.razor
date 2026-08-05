@@ -1,0 +1,264 @@
+@inject ApiClient Api
+@inject AppState State
+
+@* Pozycje odczytane z faktury — każdą można przenieść na listę zakupów jako osobny wiersz. *@
+
+@if (Invoice.LineItems.Count == 0)
+{
+    @if (Invoice.OcrStatus == OcrStatus.Extracted)
+    {
+        <div class="card">
+            <div class="card-title"><h2>Pozycje z faktury</h2></div>
+            <p class="small muted" style="margin:0">
+                AI nie wyodrębniło pojedynczych pozycji — dokument pokazuje zapewne tylko kwotę łączną.
+                Pozycje dodasz ręcznie na liście zakupów.
+            </p>
+        </div>
+    }
+}
+else
+{
+    <div class="card">
+        <div class="card-title">
+            <h2>Pozycje z faktury</h2>
+            <span class="badge badge-info">@Invoice.LineItems.Count odczytanych</span>
+        </div>
+
+        <StatusMessage Error="@_error" Success="@_success" />
+
+        @if (Invoice.LinkedShoppingItemsCount > 0)
+        {
+            <div class="alert alert-ok">
+                Z tej faktury dodano już @Invoice.LinkedShoppingItemsCount pozycji na listę zakupów.
+                Ponowne dodanie utworzy duplikaty.
+            </div>
+        }
+
+        <p class="small muted">
+            Zaznacz, co ma trafić na listę zakupów. Każda pozycja powstanie osobno,
+            ze statusem „Kupione”, rzeczywistym kosztem i podpiętą fakturą.
+        </p>
+
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                <tr>
+                    <th style="width:2rem">
+                        <input type="checkbox" checked="@AllSelected" @onchange="ToggleAll" title="Zaznacz wszystkie" />
+                    </th>
+                    <th>Pozycja</th>
+                    <th class="num">Ilość</th>
+                    <th class="num">Cena szt.</th>
+                    <th class="num">Wartość</th>
+                    <th>Kategoria</th>
+                </tr>
+                </thead>
+                <tbody>
+                @for (var i = 0; i < Invoice.LineItems.Count; i++)
+                {
+                    var index = i;
+                    var line = Invoice.LineItems[index];
+
+                    <tr>
+                        <td>
+                            <input type="checkbox" checked="@_selected.Contains(index)"
+                                   @onchange="e => Toggle(index, e.Value is true)" />
+                        </td>
+                        <td>@line.Name</td>
+                        <td class="num">@Fmt.Quantity(line.Quantity) @line.Unit</td>
+                        <td class="num">@Fmt.MoneyShort(line.UnitPrice)</td>
+                        <td class="num"><strong>@Fmt.MoneyShort(line.TotalPrice)</strong></td>
+                        <td>
+                            @if (string.IsNullOrWhiteSpace(line.SuggestedCategoryName))
+                            {
+                                <span class="muted small">—</span>
+                            }
+                            else
+                            {
+                                <span class="badge">@line.SuggestedCategoryName</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                <tr class="total-row">
+                    <td colspan="4">Zaznaczono @_selected.Count z @Invoice.LineItems.Count</td>
+                    <td class="num">@Fmt.MoneyShort(SelectedTotal)</td>
+                    <td></td>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        @if (SumMismatch is { } difference)
+        {
+            <div class="alert alert-warn" style="margin-top:.7rem">
+                Suma pozycji (@Fmt.MoneyShort(LineItemsTotal)) różni się od kwoty faktury
+                (@Fmt.MoneyShort(Invoice.Amount)) o @Fmt.MoneyShort(difference).
+                Przy kilku towarach to zwykle koszt dostawy, którego nie rozdzielamy na pozycje.
+                W innym wypadku sprawdź, czy AI nie pominęło wiersza.
+            </div>
+        }
+
+        <div class="grid-2" style="margin-top:.8rem">
+            <div class="field">
+                <label for="li-room">Pomieszczenie dla dodawanych pozycji</label>
+                <select id="li-room" value="@(_roomId?.ToString() ?? "")" @onchange="OnRoomChanged">
+                    <option value="">@ShoppingConstants.WholePropertyRoomName</option>
+                    @foreach (var room in _rooms)
+                    {
+                        <option value="@room.Id">@room.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="li-status">Status</label>
+                <select id="li-status" value="@_status" @onchange="OnStatusChanged">
+                    @foreach (var status in Enum.GetValues<ShoppingStatus>())
+                    {
+                        <option value="@status">@PolishLabels.For(status)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="btn-row">
+            <button class="btn btn-primary" disabled="@(_busy || _selected.Count == 0)" @onclick="AddSelectedAsync">
+                @(_busy ? "Dodawanie…" : $"➕ Dodaj {_selected.Count} poz. do listy zakupów")
+            </button>
+            <a class="btn" href="@($"zakupy?mieszkanie={Invoice.PropertyId}")">Otwórz listę zakupów</a>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public InvoiceDto Invoice { get; set; } = default!;
+    [Parameter] public EventCallback OnAdded { get; set; }
+
+    private readonly HashSet<int> _selected = [];
+    private List<RoomDto> _rooms = [];
+    private int? _roomId;
+    private ShoppingStatus _status = ShoppingStatus.Bought;
+    private bool _busy;
+    private string? _error;
+    private string? _success;
+    private int _loadedInvoiceId = -1;
+
+    private bool AllSelected => Invoice.LineItems.Count > 0 && _selected.Count == Invoice.LineItems.Count;
+
+    private decimal SelectedTotal => _selected.Sum(i => Invoice.LineItems[i].TotalPrice ?? 0m);
+
+    private decimal LineItemsTotal => Invoice.LineItems.Sum(l => l.TotalPrice ?? 0m);
+
+    /// <summary>Różnica większa niż grosz sugeruje, że model pominął jakiś wiersz.</summary>
+    private decimal? SumMismatch
+    {
+        get
+        {
+            if (Invoice.Amount is not { } amount || LineItemsTotal == 0m)
+            {
+                return null;
+            }
+
+            var difference = Math.Abs(amount - LineItemsTotal);
+            return difference > 0.01m ? difference : null;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedInvoiceId == Invoice.Id)
+        {
+            return;
+        }
+
+        _loadedInvoiceId = Invoice.Id;
+        _error = null;
+        _success = null;
+
+        // Domyślnie zaznaczamy wszystko — częściej dodaje się całą fakturę niż jej wycinek.
+        _selected.Clear();
+        for (var i = 0; i < Invoice.LineItems.Count; i++)
+        {
+            _selected.Add(i);
+        }
+
+        _roomId = Invoice.RoomId;
+
+        try
+        {
+            _rooms = Invoice.PropertyId > 0 ? await State.GetRoomsAsync(Invoice.PropertyId) : [];
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void OnRoomChanged(ChangeEventArgs e) =>
+        _roomId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+
+    private void OnStatusChanged(ChangeEventArgs e) =>
+        _status = Enum.TryParse<ShoppingStatus>(e.Value?.ToString(), out var status)
+            ? status
+            : ShoppingStatus.Bought;
+
+    private void Toggle(int index, bool selected)
+    {
+        if (selected)
+        {
+            _selected.Add(index);
+        }
+        else
+        {
+            _selected.Remove(index);
+        }
+    }
+
+    private void ToggleAll(ChangeEventArgs e)
+    {
+        _selected.Clear();
+
+        if (e.Value is true)
+        {
+            for (var i = 0; i < Invoice.LineItems.Count; i++)
+            {
+                _selected.Add(i);
+            }
+        }
+    }
+
+    private async Task AddSelectedAsync()
+    {
+        _busy = true;
+        _error = null;
+        _success = null;
+
+        try
+        {
+            var request = new CreateShoppingItemsFromInvoiceRequest
+            {
+                RoomId = _roomId,
+                Status = _status,
+                Items = _selected.OrderBy(i => i).Select(i => Invoice.LineItems[i]).ToList()
+            };
+
+            var created = await Api.CreateShoppingItemsFromInvoiceAsync(Invoice.Id, request);
+
+            Invoice.LinkedShoppingItemsCount += created.Count;
+            _success = $"Dodano {created.Count} pozycji do listy zakupów.";
+
+            await OnAdded.InvokeAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
