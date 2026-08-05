@@ -1,0 +1,47 @@
+@* Ta sama lista pozycji renderowana jako sidebar (desktop) albo dolny pasek (telefon). *@
+
+@if (Bottom)
+{
+    <nav class="bottom-nav">
+        @foreach (var item in Items)
+        {
+            <NavLink href="@item.Href" Match="@item.Match">
+                <span class="nav-icon">@item.Icon</span>
+                <span>@item.ShortLabel</span>
+            </NavLink>
+        }
+    </nav>
+}
+else
+{
+    <nav class="nav-links">
+        @foreach (var item in Items)
+        {
+            <NavLink href="@item.Href" Match="@item.Match">
+                <span class="nav-icon">@item.Icon</span>
+                <span>@item.Label</span>
+            </NavLink>
+        }
+        <NavLink href="faktury/dodaj" Match="NavLinkMatch.All">
+            <span class="nav-icon">📷</span>
+            <span>Dodaj fakturę</span>
+        </NavLink>
+    </nav>
+}
+
+@code {
+    /// <summary>true = wersja dla telefonu (dolny pasek z pięcioma ikonami).</summary>
+    [Parameter]
+    public bool Bottom { get; set; }
+
+    private sealed record NavItem(string Href, string Label, string ShortLabel, string Icon, NavLinkMatch Match);
+
+    private static readonly NavItem[] Items =
+    [
+        new("", "Pulpit", "Pulpit", "🏠", NavLinkMatch.All),
+        new("faktury", "Faktury", "Faktury", "🧾", NavLinkMatch.Prefix),
+        new("zakupy", "Lista zakupów", "Zakupy", "🛒", NavLinkMatch.Prefix),
+        new("mieszkania", "Mieszkania", "Metraż", "📐", NavLinkMatch.Prefix),
+        new("raporty", "Raporty", "Raporty", "📊", NavLinkMatch.Prefix)
+    ];
+}

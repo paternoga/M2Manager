@@ -1,0 +1,791 @@
+@page "/mieszkania"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AppState State
+@inject IJSRuntime Js
+
+<PageTitle>Mieszkania — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Mieszkania i pomieszczenia</h1>
+        <p class="muted small">Wymiary, otwory i wyliczone powierzchnie do malowania.</p>
+    </div>
+    <button class="btn btn-primary" @onclick="NewProperty">+ Nowe mieszkanie</button>
+</div>
+
+<StatusMessage Error="@_error" Success="@_success" />
+
+@if (_loading)
+{
+    <Loading />
+}
+else
+{
+    <div class="grid">
+        @foreach (var property in _properties)
+        {
+            <div class="card @(property.Id == _selectedPropertyId ? "" : "")">
+                <div class="card-title">
+                    <h2>@property.Name</h2>
+                    <span class="badge">@PolishLabels.For(property.Purpose)</span>
+                </div>
+
+                <p class="small muted" style="margin-bottom:.5rem">
+                    @Fmt.Text(property.Address)
+                    · pomieszczeń: @property.RoomsCount
+                    · domyślna wysokość: @Fmt.Length(property.DefaultRoomHeightM)
+                </p>
+
+                <div class="btn-row">
+                    <button class="btn btn-sm @(property.Id == _selectedPropertyId ? "btn-primary" : "")"
+                            @onclick="() => SelectPropertyAsync(property.Id)">
+                        Pomieszczenia
+                    </button>
+                    <a class="btn btn-sm" href="@($"mieszkania/{property.Id}/rzut")">Edytor rzutu</a>
+                    <button class="btn btn-sm" @onclick="() => EditProperty(property)">Edytuj</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => DeletePropertyAsync(property)">Usuń</button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_areas is not null)
+    {
+        <div class="card">
+            <div class="card-title">
+                <h2>@_areas.PropertyName — pomieszczenia</h2>
+                <div class="btn-row">
+                    <button class="btn btn-sm btn-primary" @onclick="NewRoom">+ Pomieszczenie</button>
+                    <a class="btn btn-sm" href="@($"mieszkania/{_areas.PropertyId}/rzut")">Rysuj rzut</a>
+                </div>
+            </div>
+
+            @if (_rooms.Count == 0)
+            {
+                <div class="empty-state">
+                    <span class="emoji">📐</span>
+                    <p>To mieszkanie nie ma jeszcze pomieszczeń.</p>
+                </div>
+            }
+            else
+            {
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead>
+                        <tr>
+                            <th>Pomieszczenie</th>
+                            <th class="num">Wymiary</th>
+                            <th class="num">Metraż</th>
+                            <th class="num">Wys.</th>
+                            <th class="num">Obwód</th>
+                            <th class="num">Ściany brutto</th>
+                            <th class="num">Otwory</th>
+                            <th class="num">Ściany netto</th>
+                            <th class="num">Sufit</th>
+                            <th></th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var row in _areas.Rooms)
+                        {
+                            var room = _rooms.FirstOrDefault(r => r.Id == row.RoomId);
+                            <tr>
+                                <td>
+                                    <strong>@row.RoomName</strong>
+                                    @if (!row.IncludeInTotals)
+                                    {
+                                        <span class="badge" title="Nie wlicza się do sum">poza sumą</span>
+                                    }
+                                    @if (room is not null && room.Openings.Count > 0)
+                                    {
+                                        <div class="small muted">@OpeningsSummary(room)</div>
+                                    }
+                                </td>
+                                <td class="num nowrap">
+                                    @(room?.LengthM is not null && room.WidthM is not null
+                                        ? $"{Fmt.Length(room.LengthM)} × {Fmt.Length(room.WidthM)}"
+                                        : "—")
+                                </td>
+                                <td class="num">@Fmt.Number(row.Area.FloorAreaM2)</td>
+                                <td class="num">@Fmt.Number(row.Area.HeightM)</td>
+                                <td class="num">@Fmt.Number(row.Area.PerimeterM)</td>
+                                <td class="num">@Fmt.Number(row.Area.GrossWallAreaM2)</td>
+                                <td class="num">@Fmt.Number(row.Area.OpeningsAreaM2)</td>
+                                <td class="num"><strong>@Fmt.Number(row.Area.NetWallAreaM2)</strong></td>
+                                <td class="num">@Fmt.Number(row.Area.CeilingAreaM2)</td>
+                                <td class="nowrap">
+                                    @if (room is not null)
+                                    {
+                                        <button class="btn btn-sm" @onclick="() => EditRoom(room)">Edytuj</button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteRoomAsync(room)">Usuń</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot>
+                        <tr class="total-row">
+                            <td colspan="2">Razem (@_areas.Summary.RoomsCounted pomieszczeń)</td>
+                            <td class="num">@Fmt.Number(_areas.Summary.TotalFloorAreaM2)</td>
+                            <td class="num"></td>
+                            <td class="num"></td>
+                            <td class="num"></td>
+                            <td class="num"></td>
+                            <td class="num">@Fmt.Number(_areas.Summary.TotalNetWallAreaM2)</td>
+                            <td class="num">@Fmt.Number(_areas.Summary.TotalCeilingAreaM2)</td>
+                            <td></td>
+                        </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div class="grid-3" style="margin-top:.9rem">
+                    <div class="metric">
+                        <div class="metric-label">Suma metrażu</div>
+                        <div class="metric-value">@Fmt.Area(_areas.Summary.TotalFloorAreaM2)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Ściany netto</div>
+                        <div class="metric-value">@Fmt.Area(_areas.Summary.TotalNetWallAreaM2)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Sufity</div>
+                        <div class="metric-value">@Fmt.Area(_areas.Summary.TotalCeilingAreaM2)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Ściany + sufity</div>
+                        <div class="metric-value">@Fmt.Area(_areas.Summary.TotalWallsAndCeilingM2)</div>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <MaterialCalculatorCard PropertyId="_areas.PropertyId"
+                                Areas="_areas"
+                                OnAddedToShoppingList="OnMaterialAdded" />
+    }
+}
+
+@* ---------------------------------------------------------------- panel: mieszkanie *@
+
+@if (_propertyDraft is not null)
+{
+    <div class="drawer-backdrop" @onclick="() => _propertyDraft = null"></div>
+    <div class="drawer">
+        <div class="drawer-head">
+            <h2>@(_editingPropertyId is null ? "Nowe mieszkanie" : "Edycja mieszkania")</h2>
+            <button class="btn btn-sm" @onclick="() => _propertyDraft = null">Zamknij</button>
+        </div>
+
+        <EditForm Model="_propertyDraft" OnValidSubmit="SavePropertyAsync" FormName="property">
+            <DataAnnotationsValidator />
+
+            <div class="drawer-body">
+                <StatusMessage Error="@_drawerError" />
+
+                <div class="field">
+                    <label for="p-name">Nazwa</label>
+                    <InputText id="p-name" @bind-Value="_propertyDraft.Name" />
+                    <ValidationMessage For="() => _propertyDraft.Name" />
+                </div>
+
+                <div class="field">
+                    <label for="p-address">Adres</label>
+                    <InputText id="p-address" @bind-Value="_propertyDraft.Address" />
+                </div>
+
+                <div class="field">
+                    <label for="p-purpose">Przeznaczenie</label>
+                    <InputSelect id="p-purpose" @bind-Value="_propertyDraft.Purpose">
+                        @foreach (var purpose in Enum.GetValues<PropertyPurpose>())
+                        {
+                            <option value="@purpose">@PolishLabels.For(purpose)</option>
+                        }
+                    </InputSelect>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="p-area">Powierzchnia użytkowa (m²)</label>
+                        <InputNumber id="p-area" step="0.01" @bind-Value="_propertyDraft.TotalAreaM2" />
+                        <ValidationMessage For="() => _propertyDraft.TotalAreaM2" />
+                    </div>
+
+                    <div class="field">
+                        <label for="p-height">Domyślna wysokość (m)</label>
+                        <InputNumber id="p-height" step="0.01" @bind-Value="_propertyDraft.DefaultRoomHeightM" />
+                        <ValidationMessage For="() => _propertyDraft.DefaultRoomHeightM" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="drawer-foot">
+                <button class="btn btn-primary" type="submit" disabled="@_saving">Zapisz</button>
+                <button class="btn" type="button" @onclick="() => _propertyDraft = null">Anuluj</button>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@* ---------------------------------------------------------------- panel: pomieszczenie *@
+
+@if (_roomDraft is not null)
+{
+    <div class="drawer-backdrop" @onclick="CloseRoomDrawer"></div>
+    <div class="drawer">
+        <div class="drawer-head">
+            <h2>@(_editingRoom is null ? "Nowe pomieszczenie" : _editingRoom.Name)</h2>
+            <button class="btn btn-sm" @onclick="CloseRoomDrawer">Zamknij</button>
+        </div>
+
+        <EditForm Model="_roomDraft" OnValidSubmit="SaveRoomAsync" FormName="room">
+            <DataAnnotationsValidator />
+
+            <div class="drawer-body">
+                <StatusMessage Error="@_drawerError" />
+
+                <div class="field">
+                    <label for="r-name">Nazwa</label>
+                    <InputText id="r-name" @bind-Value="_roomDraft.Name" />
+                    <ValidationMessage For="() => _roomDraft.Name" />
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="r-length">Długość (m)</label>
+                        <InputNumber id="r-length" step="0.01" @bind-Value="_roomDraft.LengthM" />
+                    </div>
+                    <div class="field">
+                        <label for="r-width">Szerokość (m)</label>
+                        <InputNumber id="r-width" step="0.01" @bind-Value="_roomDraft.WidthM" />
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="r-height">Wysokość (m) — puste = domyślna</label>
+                        <InputNumber id="r-height" step="0.01" @bind-Value="_roomDraft.HeightM" />
+                    </div>
+                    <div class="field">
+                        <label for="r-floor">Metraż (m²) — puste = z wymiarów</label>
+                        <InputNumber id="r-floor" step="0.01" @bind-Value="_roomDraft.FloorAreaM2" />
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="r-manual-wall">Ręczna powierzchnia ścian (m²)</label>
+                        <InputNumber id="r-manual-wall" step="0.01" @bind-Value="_roomDraft.ManualWallAreaM2" />
+                    </div>
+                    <div class="field">
+                        <label for="r-excluded">Ściany do odjęcia (m²)</label>
+                        <InputNumber id="r-excluded" step="0.01" @bind-Value="_roomDraft.ExcludedWallAreaM2" />
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="r-ceiling">Ręczna powierzchnia sufitu (m²)</label>
+                        <InputNumber id="r-ceiling" step="0.01" @bind-Value="_roomDraft.ManualCeilingAreaM2" />
+                    </div>
+                    <div class="field">
+                        <label for="r-order">Kolejność</label>
+                        <InputNumber id="r-order" @bind-Value="_roomDraft.SortOrder" />
+                    </div>
+                </div>
+
+                <label class="checkbox">
+                    <InputCheckbox @bind-Value="_roomDraft.IncludeInTotals" />
+                    <span>Wliczaj do sum mieszkania</span>
+                </label>
+
+                <div class="field">
+                    <label for="r-notes">Notatki</label>
+                    <InputTextArea id="r-notes" @bind-Value="_roomDraft.Notes" />
+                </div>
+
+                @* podgląd wyliczeń liczony tym samym kodem co serwer *@
+                <div class="card" style="background:var(--surface-alt);margin-bottom:.75rem">
+                    <h3>Wyliczenia na żywo</h3>
+                    @{
+                        var preview = PreviewArea();
+                    }
+                    <table class="data">
+                        <tbody>
+                        <tr><td>Obwód</td><td class="num">@Fmt.Number(preview.PerimeterM) m</td></tr>
+                        <tr><td>Metraż</td><td class="num">@Fmt.Number(preview.FloorAreaM2) m²</td></tr>
+                        <tr><td>Ściany brutto</td><td class="num">@Fmt.Number(preview.GrossWallAreaM2) m²</td></tr>
+                        <tr><td>Otwory</td><td class="num">@Fmt.Number(preview.OpeningsAreaM2) m²</td></tr>
+                        <tr><td><strong>Ściany netto</strong></td><td class="num"><strong>@Fmt.Number(preview.NetWallAreaM2) m²</strong></td></tr>
+                        <tr><td>Sufit</td><td class="num">@Fmt.Number(preview.CeilingAreaM2) m²</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                @if (_editingRoom is not null)
+                {
+                    <div class="card" style="background:var(--surface-alt)">
+                        <div class="card-title">
+                            <h3>Okna i drzwi</h3>
+                            <button class="btn btn-sm" type="button" @onclick="AddOpeningRow">+ Dodaj</button>
+                        </div>
+
+                        @if (_editingRoom.Openings.Count == 0)
+                        {
+                            <p class="small muted">Brak otworów — cała powierzchnia ścian idzie do malowania.</p>
+                        }
+
+                        @foreach (var opening in _editingRoom.Openings.ToList())
+                        {
+                            <div class="row-between" style="margin-bottom:.4rem">
+                                <span class="small">
+                                    @PolishLabels.For(opening.Type)
+                                    @opening.WidthCm × @opening.HeightCm cm
+                                    @if (opening.Count > 1)
+                                    {
+                                        <text> × @opening.Count szt.</text>
+                                    }
+                                    @if (!opening.SubtractFromWalls)
+                                    {
+                                        <span class="badge">nie odejmuj</span>
+                                    }
+                                </span>
+                                <button class="btn btn-sm btn-danger" type="button"
+                                        @onclick="() => DeleteOpeningAsync(opening)">Usuń</button>
+                            </div>
+                        }
+
+                        @if (_openingDraft is not null)
+                        {
+                            <div class="divider"></div>
+                            <div class="grid-2">
+                                <div class="field">
+                                    <label for="o-type">Rodzaj</label>
+                                    <select id="o-type" value="@_openingDraft.Type"
+                                            @onchange="e => _openingDraft.Type = Enum.Parse<OpeningType>(e.Value?.ToString() ?? nameof(OpeningType.Window))">
+                                        @foreach (var type in Enum.GetValues<OpeningType>())
+                                        {
+                                            <option value="@type">@PolishLabels.For(type)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label for="o-count">Sztuk</label>
+                                    <InputNumber id="o-count" @bind-Value="_openingDraft.Count" />
+                                </div>
+                                <div class="field">
+                                    <label for="o-width">Szerokość (cm)</label>
+                                    <InputNumber id="o-width" @bind-Value="_openingDraft.WidthCm" />
+                                </div>
+                                <div class="field">
+                                    <label for="o-height">Wysokość (cm)</label>
+                                    <InputNumber id="o-height" @bind-Value="_openingDraft.HeightCm" />
+                                </div>
+                            </div>
+
+                            <label class="checkbox">
+                                <InputCheckbox @bind-Value="_openingDraft.SubtractFromWalls" />
+                                <span>Odejmij od powierzchni ścian</span>
+                            </label>
+
+                            <div class="btn-row">
+                                <button class="btn btn-sm btn-primary" type="button" @onclick="SaveOpeningAsync">
+                                    Zapisz otwór
+                                </button>
+                                <button class="btn btn-sm" type="button" @onclick="() => _openingDraft = null">
+                                    Anuluj
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="small muted">Okna i drzwi dodasz po zapisaniu pomieszczenia.</p>
+                }
+            </div>
+
+            <div class="drawer-foot">
+                <button class="btn btn-primary" type="submit" disabled="@_saving">Zapisz pomieszczenie</button>
+                <button class="btn" type="button" @onclick="CloseRoomDrawer">Anuluj</button>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    private List<PropertyDto> _properties = [];
+    private List<RoomDto> _rooms = [];
+    private PropertyAreasDto? _areas;
+    private int? _selectedPropertyId;
+
+    private PropertyUpsertDto? _propertyDraft;
+    private int? _editingPropertyId;
+
+    private RoomUpsertDto? _roomDraft;
+    private RoomDto? _editingRoom;
+    private RoomOpeningUpsertDto? _openingDraft;
+    private int? _editingOpeningId;
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+    private string? _success;
+    private string? _drawerError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _properties = await State.GetPropertiesAsync(refresh: true);
+            _selectedPropertyId = State.SelectedPropertyId ?? _properties.FirstOrDefault()?.Id;
+
+            if (_selectedPropertyId.HasValue)
+            {
+                await LoadPropertyDetailsAsync(_selectedPropertyId.Value);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SelectPropertyAsync(int propertyId)
+    {
+        _selectedPropertyId = propertyId;
+        State.SelectProperty(propertyId);
+        await LoadPropertyDetailsAsync(propertyId);
+    }
+
+    private async Task LoadPropertyDetailsAsync(int propertyId)
+    {
+        try
+        {
+            _rooms = await State.GetRoomsAsync(propertyId, refresh: true);
+            _areas = await Api.GetAreasAsync(propertyId);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    // ---------------------------------------------------------------- mieszkania
+
+    private void NewProperty()
+    {
+        _editingPropertyId = null;
+        _drawerError = null;
+        _propertyDraft = new PropertyUpsertDto();
+    }
+
+    private void EditProperty(PropertyDto property)
+    {
+        _editingPropertyId = property.Id;
+        _drawerError = null;
+        _propertyDraft = new PropertyUpsertDto
+        {
+            Name = property.Name,
+            Address = property.Address,
+            Purpose = property.Purpose,
+            TotalAreaM2 = property.TotalAreaM2,
+            DefaultRoomHeightM = property.DefaultRoomHeightM
+        };
+    }
+
+    private async Task SavePropertyAsync()
+    {
+        if (_propertyDraft is null)
+        {
+            return;
+        }
+
+        _saving = true;
+        _drawerError = null;
+
+        try
+        {
+            if (_editingPropertyId is null)
+            {
+                var created = await Api.CreatePropertyAsync(_propertyDraft);
+                _selectedPropertyId = created.Id;
+            }
+            else
+            {
+                await Api.UpdatePropertyAsync(_editingPropertyId.Value, _propertyDraft);
+            }
+
+            _propertyDraft = null;
+            _success = "Mieszkanie zapisane.";
+
+            State.Invalidate();
+            _properties = await State.GetPropertiesAsync(refresh: true);
+
+            if (_selectedPropertyId.HasValue)
+            {
+                await LoadPropertyDetailsAsync(_selectedPropertyId.Value);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _drawerError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeletePropertyAsync(PropertyDto property)
+    {
+        var confirmed = await Js.InvokeAsync<bool>("confirm",
+            $"Usunąć „{property.Name}”? Znikną też jego pomieszczenia, faktury i pozycje listy zakupów.");
+
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeletePropertyAsync(property.Id);
+            _success = "Mieszkanie usunięte.";
+
+            State.Invalidate();
+            _properties = await State.GetPropertiesAsync(refresh: true);
+            _selectedPropertyId = _properties.FirstOrDefault()?.Id;
+            _areas = null;
+            _rooms = [];
+
+            if (_selectedPropertyId.HasValue)
+            {
+                await LoadPropertyDetailsAsync(_selectedPropertyId.Value);
+            }
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    // ---------------------------------------------------------------- pomieszczenia
+
+    private void NewRoom()
+    {
+        _editingRoom = null;
+        _openingDraft = null;
+        _drawerError = null;
+        _roomDraft = new RoomUpsertDto { IncludeInTotals = true };
+    }
+
+    private void EditRoom(RoomDto room)
+    {
+        _editingRoom = room;
+        _openingDraft = null;
+        _drawerError = null;
+        _roomDraft = new RoomUpsertDto
+        {
+            Name = room.Name,
+            SortOrder = room.SortOrder,
+            FloorAreaM2 = room.FloorAreaM2,
+            LengthM = room.LengthM,
+            WidthM = room.WidthM,
+            HeightM = room.HeightM,
+            ManualWallAreaM2 = room.ManualWallAreaM2,
+            ExcludedWallAreaM2 = room.ExcludedWallAreaM2,
+            ManualCeilingAreaM2 = room.ManualCeilingAreaM2,
+            IncludeInTotals = room.IncludeInTotals,
+            Notes = room.Notes,
+            GeometryJson = room.GeometryJson
+        };
+    }
+
+    private void CloseRoomDrawer()
+    {
+        _roomDraft = null;
+        _editingRoom = null;
+        _openingDraft = null;
+    }
+
+    private async Task SaveRoomAsync()
+    {
+        if (_roomDraft is null || _selectedPropertyId is null)
+        {
+            return;
+        }
+
+        _saving = true;
+        _drawerError = null;
+
+        try
+        {
+            if (_editingRoom is null)
+            {
+                await Api.CreateRoomAsync(_selectedPropertyId.Value, _roomDraft);
+            }
+            else
+            {
+                await Api.UpdateRoomAsync(_selectedPropertyId.Value, _editingRoom.Id, _roomDraft);
+            }
+
+            CloseRoomDrawer();
+            _success = "Pomieszczenie zapisane.";
+
+            State.InvalidateRooms(_selectedPropertyId.Value);
+            await LoadPropertyDetailsAsync(_selectedPropertyId.Value);
+        }
+        catch (ApiException ex)
+        {
+            _drawerError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteRoomAsync(RoomDto room)
+    {
+        if (_selectedPropertyId is null)
+        {
+            return;
+        }
+
+        if (!await Js.InvokeAsync<bool>("confirm", $"Usunąć pomieszczenie „{room.Name}”?"))
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteRoomAsync(_selectedPropertyId.Value, room.Id);
+            _success = "Pomieszczenie usunięte.";
+
+            State.InvalidateRooms(_selectedPropertyId.Value);
+            await LoadPropertyDetailsAsync(_selectedPropertyId.Value);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    // ---------------------------------------------------------------- otwory
+
+    private void AddOpeningRow()
+    {
+        _editingOpeningId = null;
+        _openingDraft = new RoomOpeningUpsertDto
+        {
+            Type = OpeningType.Window,
+            WidthCm = 90,
+            HeightCm = 150,
+            Count = 1,
+            SubtractFromWalls = true
+        };
+    }
+
+    private async Task SaveOpeningAsync()
+    {
+        if (_openingDraft is null || _editingRoom is null || _selectedPropertyId is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_editingOpeningId is null)
+            {
+                await Api.CreateOpeningAsync(_editingRoom.Id, _openingDraft);
+            }
+            else
+            {
+                await Api.UpdateOpeningAsync(_editingRoom.Id, _editingOpeningId.Value, _openingDraft);
+            }
+
+            _openingDraft = null;
+            await RefreshEditedRoomAsync();
+        }
+        catch (ApiException ex)
+        {
+            _drawerError = ex.Message;
+        }
+    }
+
+    private async Task DeleteOpeningAsync(RoomOpeningDto opening)
+    {
+        if (_editingRoom is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteOpeningAsync(_editingRoom.Id, opening.Id);
+            await RefreshEditedRoomAsync();
+        }
+        catch (ApiException ex)
+        {
+            _drawerError = ex.Message;
+        }
+    }
+
+    private async Task RefreshEditedRoomAsync()
+    {
+        if (_selectedPropertyId is null || _editingRoom is null)
+        {
+            return;
+        }
+
+        State.InvalidateRooms(_selectedPropertyId.Value);
+        await LoadPropertyDetailsAsync(_selectedPropertyId.Value);
+
+        _editingRoom = _rooms.FirstOrDefault(r => r.Id == _editingRoom.Id);
+    }
+
+    // ---------------------------------------------------------------- pomocnicze
+
+    /// <summary>Podgląd liczony w przeglądarce tym samym serwisem, którego używa API.</summary>
+    private RoomAreaResult PreviewArea()
+    {
+        if (_roomDraft is null)
+        {
+            return new RoomAreaResult();
+        }
+
+        var probe = new RoomDto
+        {
+            Name = _roomDraft.Name,
+            FloorAreaM2 = _roomDraft.FloorAreaM2,
+            LengthM = _roomDraft.LengthM,
+            WidthM = _roomDraft.WidthM,
+            HeightM = _roomDraft.HeightM,
+            ManualWallAreaM2 = _roomDraft.ManualWallAreaM2,
+            ExcludedWallAreaM2 = _roomDraft.ExcludedWallAreaM2,
+            ManualCeilingAreaM2 = _roomDraft.ManualCeilingAreaM2,
+            IncludeInTotals = _roomDraft.IncludeInTotals,
+            GeometryJson = _roomDraft.GeometryJson
+        };
+
+        var defaultHeight = _properties.FirstOrDefault(p => p.Id == _selectedPropertyId)?.DefaultRoomHeightM;
+
+        return AreaCalculator.Calculate(probe, _editingRoom?.Openings ?? [], defaultHeight);
+    }
+
+    private static string OpeningsSummary(RoomDto room)
+    {
+        var parts = room.Openings
+            .GroupBy(o => o.Type)
+            .Select(g => $"{PolishLabels.For(g.Key).ToLowerInvariant()}: {g.Sum(o => Math.Max(1, o.Count))}");
+
+        return string.Join(" · ", parts);
+    }
+
+    private void OnMaterialAdded(string message) => _success = message;
+}

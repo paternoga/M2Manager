@@ -1,0 +1,16 @@
+@inject NavigationManager Navigation
+
+@* Strona wymaga zalogowania — odsyłamy na ekran logowania, zapamiętując dokąd użytkownik zmierzał. *@
+
+@code {
+    protected override void OnInitialized()
+    {
+        var target = Navigation.ToBaseRelativePath(Navigation.Uri);
+
+        var url = string.IsNullOrWhiteSpace(target) || target.StartsWith("logowanie", StringComparison.OrdinalIgnoreCase)
+            ? "logowanie"
+            : $"logowanie?powrot={Uri.EscapeDataString(target)}";
+
+        Navigation.NavigateTo(url, replace: true);
+    }
+}

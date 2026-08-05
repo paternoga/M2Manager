@@ -1,0 +1,102 @@
+@page "/logowanie"
+@layout MainLayout
+@inject ApiClient Api
+@inject AppState State
+@inject NavigationManager Navigation
+@inject CookieAuthenticationStateProvider AuthProvider
+
+<PageTitle>Logowanie — M2Manager</PageTitle>
+
+<div class="login-screen">
+    <div class="login-box">
+        <div class="brand">
+            <span class="brand-mark">m²</span>
+            <span>M2Manager</span>
+        </div>
+
+        <h1 style="font-size:1.15rem">Zaloguj się</h1>
+        <p class="muted small">Wspólne konto dla obu mieszkań.</p>
+
+        <StatusMessage Error="@_error" />
+
+        <EditForm Model="_model" OnValidSubmit="SubmitAsync" FormName="login">
+            <DataAnnotationsValidator />
+
+            <div class="field">
+                <label for="login-user">Login</label>
+                <InputText id="login-user" class="" @bind-Value="_model.Username" autocomplete="username" />
+            </div>
+
+            <div class="field">
+                <label for="login-pass">Hasło</label>
+                <InputText id="login-pass" type="password" @bind-Value="_model.Password" autocomplete="current-password" />
+            </div>
+
+            <button class="btn btn-primary btn-block" type="submit" disabled="@_busy">
+                @(_busy ? "Logowanie…" : "Zaloguj")
+            </button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private readonly LoginRequest _model = new();
+    private string? _error;
+    private bool _busy;
+
+    [SupplyParameterFromQuery(Name = "powrot")]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Ktoś już zalogowany nie powinien oglądać formularza.
+        var state = await AuthProvider.GetAuthenticationStateAsync();
+        if (state.User.Identity?.IsAuthenticated == true)
+        {
+            Navigation.NavigateTo(SafeReturnUrl(), replace: true);
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            var user = await Api.LoginAsync(_model);
+
+            State.Invalidate();
+            AuthProvider.NotifySignedIn(user);
+
+            Navigation.NavigateTo(SafeReturnUrl(), replace: true);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.IsUnauthorized ? "Nieprawidłowy login lub hasło." : ex.Message;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Brak połączenia z serwerem.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Wracamy tylko pod adresy wewnątrz aplikacji — nigdy pod zewnętrzny URL z query stringa.</summary>
+    private string SafeReturnUrl()
+    {
+        if (string.IsNullOrWhiteSpace(ReturnUrl))
+        {
+            return "";
+        }
+
+        var candidate = ReturnUrl.TrimStart('/');
+
+        return candidate.Contains("//", StringComparison.Ordinal) || candidate.Contains(':')
+            ? ""
+            : candidate;
+    }
+}

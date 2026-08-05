@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>m2manager-api-secrets</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Baza: PostgreSQL (docelowo Neon) -->
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+
+    <!--
+      Jawne referencje wyrównują wersję EF Core w całym drzewie zależności.
+      Bez nich Npgsql ciągnie 10.0.4, a narzędzia Design 10.0.10 — i build sypie MSB3277.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
+    <!-- Zdjęcia faktur: Cloudflare R2 (S3-compatible) -->
+    <PackageReference Include="AWSSDK.S3" Version="4.0.101.4" />
+
+    <!-- Eksporty -->
+    <PackageReference Include="QuestPDF" Version="2026.7.1" />
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+
+    <!-- Hosting Blazora WASM z tego samego procesu (UseBlazorFrameworkFiles) -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\M2Manager.Shared\M2Manager.Shared.csproj" />
+    <ProjectReference Include="..\M2Manager.Client\M2Manager.Client.csproj" />
+  </ItemGroup>
+
+</Project>

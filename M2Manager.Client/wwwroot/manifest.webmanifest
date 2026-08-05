@@ -1,0 +1,47 @@
+{
+  "name": "M2Manager — mieszkania",
+  "short_name": "Mieszkania",
+  "description": "Faktury, powierzchnie i lista zakupów dla dwóch mieszkań.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "lang": "pl",
+  "dir": "ltr",
+  "background_color": "#f5f6f8",
+  "theme_color": "#1f4e79",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dodaj fakturę",
+      "short_name": "Faktura",
+      "url": "./faktury/dodaj"
+    },
+    {
+      "name": "Lista zakupów",
+      "short_name": "Zakupy",
+      "url": "./zakupy"
+    }
+  ]
+}

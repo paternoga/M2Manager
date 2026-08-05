@@ -1,0 +1,338 @@
+@page "/faktury"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AppState State
+@inject IJSRuntime Js
+
+<PageTitle>Faktury — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Faktury i paragony</h1>
+        <p class="muted small">@_result.TotalCount dokument(ów) · suma na stronie: @Fmt.MoneyShort(PageTotal)</p>
+    </div>
+    <a class="btn btn-primary" href="faktury/dodaj">📷 Dodaj fakturę</a>
+</div>
+
+<StatusMessage Error="@_error" Success="@_success" />
+
+<div class="card">
+    <div class="filters">
+        <div>
+            <label for="f-property">Mieszkanie</label>
+            <select id="f-property" value="@(_query.PropertyId?.ToString() ?? "")" @onchange="OnPropertyFilterChangedAsync">
+                <option value="">Wszystkie</option>
+                @foreach (var property in _properties)
+                {
+                    <option value="@property.Id">@property.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="f-room">Pomieszczenie</label>
+            <select id="f-room" value="@(_query.RoomId?.ToString() ?? "")"
+                    @onchange="async e => { _query.RoomId = ParseNullableInt(e.Value); await ReloadAsync(); }">
+                <option value="">Wszystkie</option>
+                @foreach (var room in _rooms)
+                {
+                    <option value="@room.Id">@room.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="f-category">Kategoria</label>
+            <select id="f-category" value="@(_query.CategoryId?.ToString() ?? "")"
+                    @onchange="async e => { _query.CategoryId = ParseNullableInt(e.Value); await ReloadAsync(); }">
+                <option value="">Wszystkie</option>
+                @foreach (var category in _categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="f-from">Od</label>
+            <input id="f-from" type="date" value="@ToInput(_query.From)"
+                   @onchange="async e => { _query.From = ParseDate(e.Value); await ReloadAsync(); }" />
+        </div>
+
+        <div>
+            <label for="f-to">Do</label>
+            <input id="f-to" type="date" value="@ToInput(_query.To)"
+                   @onchange="async e => { _query.To = ParseDate(e.Value); await ReloadAsync(); }" />
+        </div>
+
+        <div>
+            <button class="btn btn-block" @onclick="ClearFiltersAsync">Wyczyść filtry</button>
+        </div>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_result.Items.Count == 0)
+{
+    <div class="card empty-state">
+        <span class="emoji">🧾</span>
+        <p>Brak faktur dla wybranych filtrów.</p>
+        <a class="btn btn-primary" href="faktury/dodaj">Dodaj pierwszą fakturę</a>
+    </div>
+}
+else
+{
+    <div class="card desktop-only">
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                <tr>
+                    <th></th>
+                    <th>Data</th>
+                    <th>Sprzedawca</th>
+                    <th>Kategoria</th>
+                    <th>Mieszkanie / pomieszczenie</th>
+                    <th class="num">Kwota</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var invoice in _result.Items)
+                {
+                    <tr>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(invoice.ImageUrl))
+                            {
+                                <a href="@invoice.ImageUrl" target="_blank" rel="noopener">
+                                    <img class="photo-thumb" src="@invoice.ImageUrl" alt="Podgląd" loading="lazy" />
+                                </a>
+                            }
+                        </td>
+                        <td class="nowrap">@Fmt.Date(invoice.IssueDate)</td>
+                        <td>@Fmt.Text(invoice.Vendor)</td>
+                        <td>@Fmt.Text(invoice.ExpenseCategoryName)</td>
+                        <td>
+                            @invoice.PropertyName
+                            @if (!string.IsNullOrWhiteSpace(invoice.RoomName))
+                            {
+                                <span class="muted small"> · @invoice.RoomName</span>
+                            }
+                        </td>
+                        <td class="num nowrap">@Fmt.Money(invoice.Amount, invoice.Currency)</td>
+                        <td><span class="@Fmt.OcrBadge(invoice.OcrStatus)">@PolishLabels.For(invoice.OcrStatus)</span></td>
+                        <td class="nowrap">
+                            <button class="btn btn-sm" @onclick="() => Edit(invoice)">Edytuj</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(invoice)">Usuń</button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mobile-only">
+        @foreach (var invoice in _result.Items)
+        {
+            <div class="item-card">
+                <div class="item-card-head">
+                    <div>
+                        <strong>@Fmt.Text(invoice.Vendor)</strong>
+                        <div class="item-card-meta">
+                            <span>@Fmt.Date(invoice.IssueDate)</span>
+                            <span>@Fmt.Text(invoice.ExpenseCategoryName)</span>
+                            <span>@invoice.PropertyName</span>
+                        </div>
+                    </div>
+                    <div class="right nowrap">
+                        <div><strong>@Fmt.Money(invoice.Amount, invoice.Currency)</strong></div>
+                        <span class="@Fmt.OcrBadge(invoice.OcrStatus)">@PolishLabels.For(invoice.OcrStatus)</span>
+                    </div>
+                </div>
+
+                <div class="btn-row" style="margin-top:.5rem">
+                    @if (!string.IsNullOrWhiteSpace(invoice.ImageUrl))
+                    {
+                        <a class="btn btn-sm" href="@invoice.ImageUrl" target="_blank" rel="noopener">Zdjęcie</a>
+                    }
+                    <button class="btn btn-sm" @onclick="() => Edit(invoice)">Edytuj</button>
+                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteAsync(invoice)">Usuń</button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_result.TotalPages > 1)
+    {
+        <div class="btn-row center" style="justify-content:center">
+            <button class="btn btn-sm" disabled="@(_query.Page <= 1)" @onclick="() => GoToPageAsync(_query.Page - 1)">
+                ← Poprzednia
+            </button>
+            <span class="small muted">Strona @_query.Page z @_result.TotalPages</span>
+            <button class="btn btn-sm" disabled="@(_query.Page >= _result.TotalPages)"
+                    @onclick="() => GoToPageAsync(_query.Page + 1)">
+                Następna →
+            </button>
+        </div>
+    }
+}
+
+@if (_editing is not null)
+{
+    <div class="drawer-backdrop" @onclick="CloseDrawer"></div>
+    <div class="drawer">
+        <div class="drawer-head">
+            <h2>Edycja faktury</h2>
+            <button class="btn btn-sm" @onclick="CloseDrawer">Zamknij</button>
+        </div>
+        <div class="drawer-body">
+            @if (!string.IsNullOrWhiteSpace(_editing.ImageUrl))
+            {
+                <div class="photo-frame" style="margin-bottom:.9rem">
+                    <img src="@_editing.ImageUrl" alt="Zdjęcie faktury" />
+                </div>
+            }
+
+            <InvoiceForm Invoice="_editing" OnSaved="OnSavedAsync" OnCancel="CloseDrawer" />
+        </div>
+    </div>
+}
+
+@code {
+    private readonly InvoiceQuery _query = new() { PageSize = 25 };
+    private PagedResult<InvoiceDto> _result = new();
+    private List<PropertyDto> _properties = [];
+    private List<RoomDto> _rooms = [];
+    private List<LookupDto> _categories = [];
+    private InvoiceDto? _editing;
+
+    private bool _loading = true;
+    private string? _error;
+    private string? _success;
+
+    [SupplyParameterFromQuery(Name = "mieszkanie")]
+    private int? PropertyFromQuery { get; set; }
+
+    private decimal PageTotal => _result.Items.Sum(i => i.Amount ?? 0m);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _properties = await State.GetPropertiesAsync();
+            _categories = await State.GetExpenseCategoriesAsync();
+
+            _query.PropertyId = PropertyFromQuery ?? State.SelectedPropertyId;
+            await LoadRoomsAsync();
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _loading = false;
+        }
+    }
+
+    private async Task OnPropertyFilterChangedAsync(ChangeEventArgs e)
+    {
+        _query.PropertyId = ParseNullableInt(e.Value);
+        _query.RoomId = null;
+
+        if (_query.PropertyId.HasValue)
+        {
+            State.SelectProperty(_query.PropertyId);
+        }
+
+        await LoadRoomsAsync();
+        await ReloadAsync();
+    }
+
+    private async Task LoadRoomsAsync() =>
+        _rooms = _query.PropertyId.HasValue
+            ? await State.GetRoomsAsync(_query.PropertyId.Value)
+            : [];
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            _result = await Api.GetInvoicesAsync(_query);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        _query.Page = Math.Max(1, page);
+        await ReloadAsync();
+    }
+
+    private async Task ClearFiltersAsync()
+    {
+        _query.PropertyId = null;
+        _query.RoomId = null;
+        _query.CategoryId = null;
+        _query.From = null;
+        _query.To = null;
+        _query.Page = 1;
+        _rooms = [];
+
+        await ReloadAsync();
+    }
+
+    private void Edit(InvoiceDto invoice) => _editing = invoice;
+
+    private void CloseDrawer() => _editing = null;
+
+    private async Task OnSavedAsync(InvoiceDto saved)
+    {
+        _editing = null;
+        _success = "Zmiany zapisane.";
+        await ReloadAsync();
+    }
+
+    private async Task DeleteAsync(InvoiceDto invoice)
+    {
+        var label = string.IsNullOrWhiteSpace(invoice.Vendor) ? $"faktura #{invoice.Id}" : invoice.Vendor;
+
+        if (!await Js.InvokeAsync<bool>("confirm", $"Usunąć „{label}” razem ze zdjęciem?"))
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteInvoiceAsync(invoice.Id);
+            _success = "Faktura usunięta.";
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private static int? ParseNullableInt(object? value) =>
+        int.TryParse(value?.ToString(), out var parsed) ? parsed : null;
+
+    private static DateOnly? ParseDate(object? value) =>
+        DateOnly.TryParse(value?.ToString(), CultureInfo.InvariantCulture, out var parsed) ? parsed : null;
+
+    private static string ToInput(DateOnly? value) =>
+        value?.ToString("yyyy-MM-dd") ?? string.Empty;
+}

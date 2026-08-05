@@ -1,0 +1,64 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+@inject ApiClient Api
+@inject AppState State
+@inject CookieAuthenticationStateProvider AuthProvider
+
+<AuthorizeView>
+    <Authorized>
+        <div class="app-shell">
+            <aside class="sidebar">
+                <a class="brand" href="">
+                    <span class="brand-mark">m²</span>
+                    <span>M2Manager</span>
+                </a>
+
+                <NavMenu />
+
+                <div class="sidebar-footer">
+                    <div class="row-between">
+                        <span>@context.User.Identity?.Name</span>
+                        <button class="btn btn-sm" @onclick="LogoutAsync">Wyloguj</button>
+                    </div>
+                </div>
+            </aside>
+
+            <div class="main-area">
+                <header class="topbar">
+                    <a class="brand" href="">
+                        <span class="brand-mark">m²</span>
+                        <span>M2Manager</span>
+                    </a>
+                    <button class="btn btn-sm" @onclick="LogoutAsync">Wyloguj</button>
+                </header>
+
+                <main class="content">
+                    @Body
+                </main>
+            </div>
+
+            <NavMenu Bottom="true" />
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private async Task LogoutAsync()
+    {
+        try
+        {
+            await Api.LogoutAsync();
+        }
+        catch (ApiException)
+        {
+            // Nawet gdy serwer nie odpowie, lokalnie i tak kończymy sesję.
+        }
+
+        State.Invalidate();
+        AuthProvider.NotifySignedOut();
+        Navigation.NavigateTo("logowanie");
+    }
+}

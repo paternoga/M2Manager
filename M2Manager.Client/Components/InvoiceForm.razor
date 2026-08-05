@@ -1,0 +1,202 @@
+@inject ApiClient Api
+@inject AppState State
+
+@* Formularz faktury — używany po uploadzie (dane z AI do potwierdzenia) i przy edycji z listy. *@
+
+<StatusMessage Error="@_error" />
+
+@if (Invoice.OcrStatus == OcrStatus.Extracted)
+{
+    <div class="alert alert-info">
+        Dane odczytał AI — sprawdź je i zapisz. Zapis oznacza fakturę jako zatwierdzoną.
+    </div>
+}
+else if (Invoice.OcrStatus == OcrStatus.Failed)
+{
+    <div class="alert alert-warn">
+        Automatyczny odczyt się nie udał. Zdjęcie jest zapisane — uzupełnij dane ręcznie.
+    </div>
+}
+
+<EditForm Model="_model" OnValidSubmit="SaveAsync" FormName="invoice">
+    <DataAnnotationsValidator />
+
+    <div class="grid-2">
+        <div class="field">
+            <label for="inv-property">Mieszkanie</label>
+            <select id="inv-property" value="@_model.PropertyId" @onchange="OnPropertyChangedAsync">
+                @foreach (var property in _properties)
+                {
+                    <option value="@property.Id">@property.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="inv-room">Pomieszczenie (opcjonalnie)</label>
+            <select id="inv-room" value="@(_model.RoomId?.ToString() ?? "")"
+                    @onchange="e => _model.RoomId = ParseNullableInt(e.Value)">
+                <option value="">— całe mieszkanie —</option>
+                @foreach (var room in _rooms)
+                {
+                    <option value="@room.Id">@room.Name</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="field">
+            <label for="inv-category">Kategoria</label>
+            <select id="inv-category" value="@(_model.ExpenseCategoryId?.ToString() ?? "")"
+                    @onchange="e => _model.ExpenseCategoryId = ParseNullableInt(e.Value)">
+                <option value="">— bez kategorii —</option>
+                @foreach (var category in _categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="inv-date">Data wystawienia</label>
+            <InputDate id="inv-date" @bind-Value="_model.IssueDate" />
+            <ValidationMessage For="() => _model.IssueDate" />
+        </div>
+    </div>
+
+    <div class="field">
+        <label for="inv-vendor">Sprzedawca</label>
+        <InputText id="inv-vendor" @bind-Value="_model.Vendor" />
+        <ValidationMessage For="() => _model.Vendor" />
+    </div>
+
+    <div class="grid-2">
+        <div class="field">
+            <label for="inv-amount">Kwota brutto</label>
+            <InputNumber id="inv-amount" step="0.01" @bind-Value="_model.Amount" />
+            <ValidationMessage For="() => _model.Amount" />
+        </div>
+
+        <div class="field">
+            <label for="inv-currency">Waluta</label>
+            <InputText id="inv-currency" @bind-Value="_model.Currency" maxlength="3" />
+            <ValidationMessage For="() => _model.Currency" />
+        </div>
+    </div>
+
+    <div class="field">
+        <label for="inv-desc">Opis / notatka</label>
+        <InputTextArea id="inv-desc" @bind-Value="_model.Description" />
+        <ValidationMessage For="() => _model.Description" />
+    </div>
+
+    <div class="btn-row">
+        <button class="btn btn-primary" type="submit" disabled="@_busy">
+            @(_busy ? "Zapisywanie…" : "Zapisz i zatwierdź")
+        </button>
+
+        @if (OnCancel.HasDelegate)
+        {
+            <button class="btn" type="button" @onclick="OnCancel">Anuluj</button>
+        }
+    </div>
+</EditForm>
+
+@code {
+    [Parameter, EditorRequired] public InvoiceDto Invoice { get; set; } = default!;
+    [Parameter] public EventCallback<InvoiceDto> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private InvoiceUpsertDto _model = new();
+    private List<PropertyDto> _properties = [];
+    private List<RoomDto> _rooms = [];
+    private List<LookupDto> _categories = [];
+    private string? _error;
+    private bool _busy;
+    private int _loadedInvoiceId = -1;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedInvoiceId == Invoice.Id)
+        {
+            return;
+        }
+
+        _loadedInvoiceId = Invoice.Id;
+        _error = null;
+
+        _model = new InvoiceUpsertDto
+        {
+            PropertyId = Invoice.PropertyId,
+            RoomId = Invoice.RoomId,
+            ExpenseCategoryId = Invoice.ExpenseCategoryId,
+            Vendor = Invoice.Vendor,
+            Amount = Invoice.Amount,
+            Currency = string.IsNullOrWhiteSpace(Invoice.Currency) ? "PLN" : Invoice.Currency,
+            IssueDate = Invoice.IssueDate,
+            Description = Invoice.Description,
+            MarkConfirmed = true
+        };
+
+        try
+        {
+            _properties = await State.GetPropertiesAsync();
+            _categories = await State.GetExpenseCategoriesAsync();
+
+            if (_model.PropertyId == 0)
+            {
+                _model.PropertyId = _properties.FirstOrDefault()?.Id ?? 0;
+            }
+
+            await LoadRoomsAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task OnPropertyChangedAsync(ChangeEventArgs e)
+    {
+        _model.PropertyId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _model.RoomId = null;
+        await LoadRoomsAsync();
+    }
+
+    private async Task LoadRoomsAsync()
+    {
+        _rooms = _model.PropertyId > 0
+            ? await State.GetRoomsAsync(_model.PropertyId)
+            : [];
+
+        // Pomieszczenie z innego mieszkania nie może zostać wybrane.
+        if (_model.RoomId.HasValue && _rooms.All(r => r.Id != _model.RoomId))
+        {
+            _model.RoomId = null;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            var saved = await Api.UpdateInvoiceAsync(Invoice.Id, _model);
+            await OnSaved.InvokeAsync(saved);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static int? ParseNullableInt(object? value) =>
+        int.TryParse(value?.ToString(), out var parsed) ? parsed : null;
+}

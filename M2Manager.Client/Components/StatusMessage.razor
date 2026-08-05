@@ -1,0 +1,22 @@
+@* Jednolity komunikat o błędzie/sukcesie — używany na każdej stronie. *@
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="alert alert-error" role="alert">@Error</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Success))
+{
+    <div class="alert alert-ok" role="status">@Success</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Info))
+{
+    <div class="alert alert-info">@Info</div>
+}
+
+@code {
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string? Success { get; set; }
+    [Parameter] public string? Info { get; set; }
+}

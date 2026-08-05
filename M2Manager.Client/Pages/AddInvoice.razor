@@ -1,0 +1,218 @@
+@page "/faktury/dodaj"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AppState State
+@inject NavigationManager Navigation
+
+<PageTitle>Dodaj fakturę — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Dodaj fakturę</h1>
+        <p class="muted small">Zrób zdjęcie — dane odczyta AI, Ty je tylko potwierdzisz.</p>
+    </div>
+    <a class="btn" href="faktury">Lista faktur</a>
+</div>
+
+<StatusMessage Error="@_error" Success="@_success" />
+
+@if (_uploaded is null)
+{
+    <div class="card">
+        <div class="grid-2">
+            <div class="field">
+                <label for="up-property">Mieszkanie</label>
+                <select id="up-property" value="@_propertyId" @onchange="OnPropertyChangedAsync">
+                    @foreach (var property in _properties)
+                    {
+                        <option value="@property.Id">@property.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="field">
+                <label for="up-room">Pomieszczenie (opcjonalnie)</label>
+                <select id="up-room" value="@(_roomId?.ToString() ?? "")"
+                        @onchange="e => _roomId = int.TryParse(e.Value?.ToString(), out var id) ? id : null">
+                    <option value="">— całe mieszkanie —</option>
+                    @foreach (var room in _rooms)
+                    {
+                        <option value="@room.Id">@room.Name</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        @if (_busy)
+        {
+            <Loading Text="@_busyText" />
+        }
+        else
+        {
+            <div class="stack">
+                <div class="field">
+                    <label for="camera">Zrób zdjęcie aparatem</label>
+                    @* capture="environment" otwiera na telefonie od razu tylny aparat *@
+                    <InputFile id="camera" OnChange="UploadAsync" accept="image/*" capture="environment" />
+                </div>
+
+                <div class="field">
+                    <label for="picker">…albo wybierz plik (zdjęcie lub PDF)</label>
+                    <InputFile id="picker" OnChange="UploadAsync" accept="image/*,application/pdf" />
+                </div>
+
+                <p class="small muted">
+                    Maksymalny rozmiar pliku: @MaxFileSizeMb MB. Zdjęcie trafia do prywatnego magazynu,
+                    a link do podglądu jest generowany na czas sesji.
+                </p>
+            </div>
+        }
+    </div>
+}
+else
+{
+    <div class="grid-2">
+        <div class="card">
+            <div class="card-title">
+                <h2>Podgląd</h2>
+                <span class="@Fmt.OcrBadge(_uploaded.OcrStatus)">@PolishLabels.For(_uploaded.OcrStatus)</span>
+            </div>
+
+            <div class="photo-frame">
+                @if (!string.IsNullOrWhiteSpace(_uploaded.ImageUrl))
+                {
+                    <img src="@_uploaded.ImageUrl" alt="Zdjęcie faktury" />
+                }
+                else
+                {
+                    <span class="muted small">Brak podglądu.</span>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <h2>Dane do potwierdzenia</h2>
+            </div>
+
+            <InvoiceForm Invoice="_uploaded" OnSaved="OnSavedAsync" />
+        </div>
+    </div>
+
+    <div class="btn-row">
+        <button class="btn" @onclick="Reset">Dodaj kolejną fakturę</button>
+    </div>
+}
+
+@code {
+    private const int MaxFileSizeMb = 15;
+    private const long MaxFileSizeBytes = MaxFileSizeMb * 1024L * 1024L;
+
+    private List<PropertyDto> _properties = [];
+    private List<RoomDto> _rooms = [];
+    private int _propertyId;
+    private int? _roomId;
+
+    private InvoiceDto? _uploaded;
+    private bool _busy;
+    private string _busyText = "Wysyłanie zdjęcia…";
+    private string? _error;
+    private string? _success;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _properties = await State.GetPropertiesAsync();
+            _propertyId = State.SelectedPropertyId ?? _properties.FirstOrDefault()?.Id ?? 0;
+            await LoadRoomsAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task OnPropertyChangedAsync(ChangeEventArgs e)
+    {
+        _propertyId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _roomId = null;
+        State.SelectProperty(_propertyId);
+        await LoadRoomsAsync();
+    }
+
+    private async Task LoadRoomsAsync() =>
+        _rooms = _propertyId > 0 ? await State.GetRoomsAsync(_propertyId) : [];
+
+    private async Task UploadAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        _error = null;
+        _success = null;
+
+        if (file is null)
+        {
+            return;
+        }
+
+        if (file.Size > MaxFileSizeBytes)
+        {
+            _error = $"Plik ma {file.Size / 1024 / 1024} MB — maksimum to {MaxFileSizeMb} MB.";
+            return;
+        }
+
+        if (_propertyId <= 0)
+        {
+            _error = "Najpierw dodaj mieszkanie.";
+            return;
+        }
+
+        _busy = true;
+        _busyText = "Wysyłanie zdjęcia i odczyt przez AI…";
+
+        try
+        {
+            // Kopiujemy do pamięci: strumień przeglądarki nie zna długości, a multipart jej potrzebuje.
+            using var buffer = new MemoryStream();
+            await using (var source = file.OpenReadStream(MaxFileSizeBytes))
+            {
+                await source.CopyToAsync(buffer);
+            }
+
+            buffer.Position = 0;
+
+            var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+
+            _uploaded = await Api.UploadInvoiceAsync(buffer, file.Name, contentType, _propertyId, _roomId);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (IOException ex)
+        {
+            _error = $"Nie udało się odczytać pliku: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private Task OnSavedAsync(InvoiceDto saved)
+    {
+        _success = "Faktura zapisana i zatwierdzona.";
+        _uploaded = saved;
+        return Task.CompletedTask;
+    }
+
+    private void Reset()
+    {
+        _uploaded = null;
+        _success = null;
+        _error = null;
+    }
+}

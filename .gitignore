@@ -1,0 +1,26 @@
+# Build
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+# Sekrety i dane lokalne
+.env
+.env.local
+appsettings.Development.json
+appsettings.Local.json
+**/App_Data/
+
+# System
+Thumbs.db
+.DS_Store
+desktop.ini

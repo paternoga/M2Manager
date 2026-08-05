@@ -1,0 +1,309 @@
+@page "/raporty"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AppState State
+
+<PageTitle>Raporty — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Raporty kosztów</h1>
+        <p class="muted small">Zestawienie do banku i dla księgowej.</p>
+    </div>
+</div>
+
+<StatusMessage Error="@_error" />
+
+<div class="card">
+    <div class="filters">
+        <div>
+            <label for="r-property">Mieszkanie</label>
+            <select id="r-property" value="@_propertyId" @onchange="OnPropertyChangedAsync">
+                @foreach (var property in _properties)
+                {
+                    <option value="@property.Id">@property.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="r-year">Rok</label>
+            <select id="r-year" value="@_year" @onchange="OnYearChangedAsync">
+                @foreach (var year in Years)
+                {
+                    <option value="@year">@year</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="r-month">Miesiąc</label>
+            <select id="r-month" value="@(_month?.ToString() ?? "")" @onchange="OnMonthChangedAsync">
+                <option value="">Cały rok</option>
+                @for (var month = 1; month <= 12; month++)
+                {
+                    <option value="@month">@Fmt.MonthName(month)</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label class="field-label">Eksport</label>
+            <div class="btn-row">
+                <a class="btn" href="@ExportUrl("pdf")" target="_blank" rel="noopener">⬇ PDF</a>
+                <a class="btn" href="@ExportUrl("excel")" target="_blank" rel="noopener">⬇ Excel</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (_loading)
+{
+    <Loading Text="Liczenie raportu…" />
+}
+else if (_summary is not null)
+{
+    <div class="card">
+        <div class="card-title">
+            <h2>@_summary.PropertyName — @_summary.PeriodLabel</h2>
+        </div>
+
+        <div class="grid-3">
+            <div class="metric">
+                <div class="metric-label">Suma kosztów</div>
+                <div class="metric-value">@Fmt.Money(_summary.Total, _summary.Currency)</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Dokumentów</div>
+                <div class="metric-value">@_summary.InvoicesCount</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Bez wpisanej kwoty</div>
+                <div class="metric-value @(_summary.MissingAmountCount > 0 ? "negative" : "")">
+                    @_summary.MissingAmountCount
+                </div>
+            </div>
+        </div>
+
+        @if (_summary.MissingAmountCount > 0)
+        {
+            <div class="alert alert-warn" style="margin-top:.8rem">
+                @_summary.MissingAmountCount dokument(ów) nie ma kwoty — suma jest zaniżona.
+                Uzupełnij je na <a href="faktury">liście faktur</a>.
+            </div>
+        }
+    </div>
+
+    @if (_summary.InvoicesCount == 0)
+    {
+        <div class="card empty-state">
+            <span class="emoji">📊</span>
+            <p>Brak dokumentów w wybranym okresie.</p>
+        </div>
+    }
+    else
+    {
+        <div class="grid-2">
+            <div class="card">
+                <div class="card-title"><h2>Koszty według kategorii</h2></div>
+
+                <div class="bar-chart">
+                    @foreach (var category in _summary.ByCategory)
+                    {
+                        <div class="bar-row">
+                            <span class="small">@category.CategoryName</span>
+                            <div class="bar-track">
+                                <div class="bar-fill" style="@BarWidth(category.Total, MaxCategoryTotal)"></div>
+                            </div>
+                            <span class="bar-value small">@Fmt.MoneyShort(category.Total)</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead>
+                        <tr>
+                            <th>Kategoria</th>
+                            <th class="num">Dokumentów</th>
+                            <th class="num">Kwota</th>
+                            <th class="num">Udział</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var category in _summary.ByCategory)
+                        {
+                            <tr>
+                                <td>@category.CategoryName</td>
+                                <td class="num">@category.InvoicesCount</td>
+                                <td class="num">@Fmt.MoneyShort(category.Total)</td>
+                                <td class="num">@Share(category.Total)</td>
+                            </tr>
+                        }
+                        </tbody>
+                        <tfoot>
+                        <tr class="total-row">
+                            <td>Razem</td>
+                            <td class="num">@_summary.InvoicesCount</td>
+                            <td class="num">@Fmt.MoneyShort(_summary.Total)</td>
+                            <td class="num">100%</td>
+                        </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title"><h2>Rozkład miesięczny @_summary.Year</h2></div>
+
+                <div class="month-chart">
+                    @for (var month = 1; month <= 12; month++)
+                    {
+                        var value = _summary.ByMonth.FirstOrDefault(m => m.Month == month)?.Total ?? 0m;
+                        <div class="month-col" title="@($"{Fmt.MonthName(month)}: {Fmt.MoneyShort(value)}")">
+                            <div class="month-bar" style="@BarHeight(value, MaxMonthTotal)"></div>
+                            <span class="month-label">@(Fmt.MonthName(month)[..3])</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="table-wrap">
+                    <table class="data">
+                        <thead>
+                        <tr>
+                            <th>Miesiąc</th>
+                            <th class="num">Dokumentów</th>
+                            <th class="num">Kwota</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var month in _summary.ByMonth)
+                        {
+                            <tr>
+                                <td>@month.MonthName</td>
+                                <td class="num">@month.InvoicesCount</td>
+                                <td class="num">@Fmt.MoneyShort(month.Total)</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private List<PropertyDto> _properties = [];
+    private ReportSummaryDto? _summary;
+    private int _propertyId;
+    private int _year = DateTime.Today.Year;
+    private int? _month;
+    private bool _loading = true;
+    private string? _error;
+
+    [SupplyParameterFromQuery(Name = "mieszkanie")]
+    private int? PropertyFromQuery { get; set; }
+
+    private static IEnumerable<int> Years =>
+        Enumerable.Range(DateTime.Today.Year - 5, 7).Reverse();
+
+    private decimal MaxCategoryTotal =>
+        _summary?.ByCategory.Count > 0 ? _summary.ByCategory.Max(c => c.Total) : 0m;
+
+    private decimal MaxMonthTotal =>
+        _summary?.ByMonth.Count > 0 ? _summary.ByMonth.Max(m => m.Total) : 0m;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _properties = await State.GetPropertiesAsync();
+            _propertyId = PropertyFromQuery ?? State.SelectedPropertyId ?? _properties.FirstOrDefault()?.Id ?? 0;
+
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _loading = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (_propertyId <= 0)
+        {
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            _summary = await Api.GetReportSummaryAsync(_propertyId, _year, _month);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnPropertyChangedAsync(ChangeEventArgs e)
+    {
+        _propertyId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        State.SelectProperty(_propertyId);
+        await ReloadAsync();
+    }
+
+    private async Task OnYearChangedAsync(ChangeEventArgs e)
+    {
+        _year = int.TryParse(e.Value?.ToString(), out var year) ? year : DateTime.Today.Year;
+        await ReloadAsync();
+    }
+
+    private async Task OnMonthChangedAsync(ChangeEventArgs e)
+    {
+        _month = int.TryParse(e.Value?.ToString(), out var month) ? month : null;
+        await ReloadAsync();
+    }
+
+    private string ExportUrl(string format)
+    {
+        var url = $"api/reports/export/{format}?propertyId={_propertyId}&year={_year}";
+        return _month.HasValue ? $"{url}&month={_month}" : url;
+    }
+
+    private string Share(decimal value)
+    {
+        if (_summary is null || _summary.Total == 0m)
+        {
+            return "—";
+        }
+
+        return Fmt.Percent(Math.Round(value * 100m / _summary.Total, 1, MidpointRounding.AwayFromZero));
+    }
+
+    private static string BarWidth(decimal value, decimal max)
+    {
+        var percent = max > 0 ? value * 100m / max : 0m;
+        return $"width:{percent.ToString("0.#", CultureInfo.InvariantCulture)}%";
+    }
+
+    private static string BarHeight(decimal value, decimal max)
+    {
+        var percent = max > 0 ? value * 100m / max : 0m;
+        return $"height:{percent.ToString("0.#", CultureInfo.InvariantCulture)}%";
+    }
+}

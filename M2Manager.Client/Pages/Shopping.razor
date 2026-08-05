@@ -1,0 +1,1118 @@
+﻿@page "/zakupy"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AppState State
+@inject IJSRuntime Js
+
+<PageTitle>Lista zakupów — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Lista rzeczy do zakupu</h1>
+        <p class="muted small">@_items.Count pozycji · grupowanie po pomieszczeniach</p>
+    </div>
+    <div class="btn-row">
+        <button class="btn btn-primary" @onclick="NewItem">+ Nowa pozycja</button>
+        <button class="btn" @onclick="() => _showTools = !_showTools">Import / eksport</button>
+    </div>
+</div>
+
+<StatusMessage Error="@_error" Success="@_success" />
+
+@* ---------------------------------------------------------------- podsumowania *@
+
+@if (_summary is not null)
+{
+    <div class="card">
+        <div class="grid-3">
+            <div class="metric">
+                <div class="metric-label">Koszt szacowany</div>
+                <div class="metric-value">@Fmt.MoneyShort(_summary.TotalCost)</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Planowany budżet</div>
+                <div class="metric-value">@Fmt.MoneyShort(_summary.PlannedBudget)</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Koszt rzeczywisty</div>
+                <div class="metric-value">@Fmt.MoneyShort(_summary.ActualCost)</div>
+            </div>
+            <div class="metric">
+                <div class="metric-label">Budżet − rzeczywistość</div>
+                <div class="metric-value @(_summary.BudgetDifference < 0 ? "negative" : "positive")">
+                    @Fmt.MoneyShort(_summary.BudgetDifference)
+                </div>
+            </div>
+        </div>
+
+        <div class="row-between small" style="margin-top:.8rem">
+            <strong>Postęp remontu</strong>
+            <span class="mono">@_summary.DoneCount / @_summary.ItemsCount · @Fmt.Percent(_summary.ProgressPercent)</span>
+        </div>
+        <div class="progress" style="margin-top:.35rem">
+            <span style="@ProgressWidth(_summary.ProgressPercent)"></span>
+        </div>
+    </div>
+}
+
+@* ---------------------------------------------------------------- import / eksport *@
+
+@if (_showTools)
+{
+    <div class="card">
+        <div class="card-title"><h2>Import i eksport</h2></div>
+
+        <div class="grid-2">
+            <div>
+                <h3>Import z arkusza .xlsx</h3>
+                <p class="small muted">
+                    Rozpoznawane kolumny: L.p, Pomieszczenie, Kategoria, Pozycja, Opis, Uwagi/obliczenia, Ilość,
+                    ~Koszt szt., ~Koszt całk., Planowany budżet, Wykonawca/sklep, Link.
+                    Brakujące pomieszczenia i kategorie powstaną automatycznie,
+                    a „Całe mieszkanie” zostanie potraktowane jako brak przypisania.
+                </p>
+
+                @if (_importing)
+                {
+                    <Loading Text="Importowanie arkusza…" />
+                }
+                else
+                {
+                    <InputFile OnChange="ImportAsync" accept=".xlsx" />
+                }
+
+                @if (_importResult is not null)
+                {
+                    <div class="alert alert-ok" style="margin-top:.6rem">
+                        Zaimportowano @_importResult.ImportedCount pozycji (pominięto @_importResult.SkippedCount pustych wierszy).
+                        @if (_importResult.CreatedRooms.Count > 0)
+                        {
+                            <div>Nowe pomieszczenia: @string.Join(", ", _importResult.CreatedRooms)</div>
+                        }
+                        @if (_importResult.CreatedCategories.Count > 0)
+                        {
+                            <div>Nowe kategorie: @string.Join(", ", _importResult.CreatedCategories)</div>
+                        }
+                        @foreach (var warning in _importResult.Warnings)
+                        {
+                            <div>@warning</div>
+                        }
+                    </div>
+                }
+            </div>
+
+            <div>
+                <h3>Eksport</h3>
+                <p class="small muted">Eksport uwzględnia aktualnie ustawione filtry.</p>
+                <div class="btn-row">
+                    <a class="btn" href="@($"api/shopping/export/excel{BuildQuery()}")" target="_blank" rel="noopener">
+                        ⬇ Excel (.xlsx)
+                    </a>
+                    <a class="btn" href="@($"api/shopping/export/pdf{BuildQuery()}")" target="_blank" rel="noopener">
+                        ⬇ PDF
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@* ---------------------------------------------------------------- filtry *@
+
+<div class="card">
+    <div class="filters">
+        <div>
+            <label for="s-property">Mieszkanie</label>
+            <select id="s-property" value="@(_propertyId?.ToString() ?? "")" @onchange="OnPropertyChangedAsync">
+                <option value="">Wszystkie</option>
+                @foreach (var property in _properties)
+                {
+                    <option value="@property.Id">@property.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="s-room">Pomieszczenie</label>
+            <select id="s-room" value="@(_roomId?.ToString() ?? "")" @onchange="OnRoomChangedAsync">
+                <option value="">Wszystkie</option>
+                @foreach (var room in _rooms)
+                {
+                    <option value="@room.Id">@room.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="s-category">Kategoria</label>
+            <select id="s-category" value="@(_categoryId?.ToString() ?? "")" @onchange="OnCategoryChangedAsync">
+                <option value="">Wszystkie</option>
+                @foreach (var category in _categories)
+                {
+                    <option value="@category.Id">@category.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="s-status">Status</label>
+            <select id="s-status" value="@(_status?.ToString() ?? "")" @onchange="OnStatusChangedAsync">
+                <option value="">Wszystkie</option>
+                @foreach (var status in Enum.GetValues<ShoppingStatus>())
+                {
+                    <option value="@status">@PolishLabels.For(status)</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="s-priority">Priorytet</label>
+            <select id="s-priority" value="@(_priority?.ToString() ?? "")" @onchange="OnPriorityChangedAsync">
+                <option value="">Wszystkie</option>
+                @foreach (var priority in Enum.GetValues<ShoppingPriority>())
+                {
+                    <option value="@priority">@PolishLabels.For(priority)</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label for="s-search">Szukaj</label>
+            <input id="s-search" type="search" placeholder="nazwa lub opis" value="@_search" @onchange="OnSearchChangedAsync" />
+        </div>
+    </div>
+</div>
+
+@* ---------------------------------------------------------------- lista *@
+
+@if (_loading)
+{
+    <Loading />
+}
+else if (_items.Count == 0)
+{
+    <div class="card empty-state">
+        <span class="emoji">🛒</span>
+        <p>Brak pozycji dla wybranych filtrów.</p>
+        <button class="btn btn-primary" @onclick="NewItem">Dodaj pierwszą pozycję</button>
+    </div>
+}
+else
+{
+    <div class="card desktop-only">
+        <p class="small muted" style="margin-bottom:.5rem">
+            Kliknij w komórkę (pozycja, ilość, koszty, status), żeby edytować ją bez otwierania formularza.
+        </p>
+
+        <div class="table-wrap">
+            <table class="data">
+                <thead>
+                <tr>
+                    <th class="sortable" @onclick='@(() => SortByAsync("ordinal"))'>L.p @SortMark("ordinal")</th>
+                    <th class="sortable" @onclick='@(() => SortByAsync("category"))'>Kategoria @SortMark("category")</th>
+                    <th class="sortable" @onclick='@(() => SortByAsync("name"))'>Pozycja @SortMark("name")</th>
+                    <th>Uwagi/obliczenia</th>
+                    <th class="num">Ilość</th>
+                    <th class="num">~Koszt szt.</th>
+                    <th class="num sortable" @onclick='@(() => SortByAsync("cost"))'>~Koszt całk. @SortMark("cost")</th>
+                    <th class="num">Budżet</th>
+                    <th class="num">Rzeczywisty</th>
+                    <th class="sortable" @onclick='@(() => SortByAsync("status"))'>Status @SortMark("status")</th>
+                    <th class="sortable" @onclick='@(() => SortByAsync("priority"))'>Priorytet @SortMark("priority")</th>
+                    <th>Wykonawca/sklep</th>
+                    <th></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var group in GroupedItems())
+                {
+                    @if (_grouped)
+                    {
+                        <tr class="group-row">
+                            <td colspan="6">@group.Key</td>
+                            <td class="num">@Fmt.MoneyShort(group.Sum(i => i.TotalCost ?? 0m))</td>
+                            <td class="num">@Fmt.MoneyShort(group.Sum(i => i.PlannedBudget ?? 0m))</td>
+                            <td class="num">@Fmt.MoneyShort(group.Sum(i => i.ActualCost ?? 0m))</td>
+                            <td colspan="4">@group.Count() poz.</td>
+                        </tr>
+                    }
+
+                    @foreach (var item in group)
+                    {
+                        <tr>
+                            <td class="num">@item.OrdinalNo</td>
+                            <td>@Fmt.Text(item.CategoryName)</td>
+
+                            <td>
+                                @if (IsEditing(item.Id, "name"))
+                                {
+                                    <input type="text" value="@item.Name" @onchange='e => SaveInlineAsync(item, "name", e.Value)' @onblur="CancelEdit" autofocus />
+                                }
+                                else
+                                {
+                                    <span class="editable-cell" @onclick='() => StartEdit(item.Id, "name")'>
+                                        <strong>@item.Name</strong>
+                                    </span>
+                                    @if (!string.IsNullOrWhiteSpace(item.Description))
+                                    {
+                                        <div class="small muted">@item.Description</div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(item.Link))
+                                    {
+                                        <div class="small">
+                                            <a href="@item.Link" target="_blank" rel="noopener noreferrer">link</a>
+                                        </div>
+                                    }
+                                }
+                            </td>
+
+                            <td class="small">@Fmt.Text(item.CalculationNotes)</td>
+
+                            <td class="num">
+                                @if (IsEditing(item.Id, "quantity"))
+                                {
+                                    <input type="number" step="0.001" value="@item.Quantity"
+                                           @onchange='e => SaveInlineAsync(item, "quantity", e.Value)' @onblur="CancelEdit" autofocus />
+                                }
+                                else
+                                {
+                                    <span class="editable-cell" @onclick='() => StartEdit(item.Id, "quantity")'>
+                                        @Fmt.Quantity(item.Quantity) @item.Unit
+                                    </span>
+                                }
+                            </td>
+
+                            <td class="num">
+                                @if (IsEditing(item.Id, "unitCost"))
+                                {
+                                    <input type="number" step="0.01" value="@item.UnitCost"
+                                           @onchange='e => SaveInlineAsync(item, "unitCost", e.Value)' @onblur="CancelEdit" autofocus />
+                                }
+                                else
+                                {
+                                    <span class="editable-cell" @onclick='() => StartEdit(item.Id, "unitCost")'>
+                                        @Fmt.MoneyShort(item.UnitCost)
+                                    </span>
+                                }
+                            </td>
+
+                            <td class="num">
+                                @if (IsEditing(item.Id, "totalCost"))
+                                {
+                                    <input type="number" step="0.01" value="@item.TotalCost"
+                                           @onchange='e => SaveInlineAsync(item, "totalCost", e.Value)' @onblur="CancelEdit" autofocus />
+                                }
+                                else
+                                {
+                                    <span class="editable-cell" @onclick='() => StartEdit(item.Id, "totalCost")'>
+                                        <strong>@Fmt.MoneyShort(item.TotalCost)</strong>
+                                    </span>
+                                }
+                            </td>
+
+                            <td class="num">
+                                @if (IsEditing(item.Id, "plannedBudget"))
+                                {
+                                    <input type="number" step="0.01" value="@item.PlannedBudget"
+                                           @onchange='e => SaveInlineAsync(item, "plannedBudget", e.Value)' @onblur="CancelEdit" autofocus />
+                                }
+                                else
+                                {
+                                    <span class="editable-cell" @onclick='() => StartEdit(item.Id, "plannedBudget")'>
+                                        @Fmt.MoneyShort(item.PlannedBudget)
+                                    </span>
+                                }
+                            </td>
+
+                            <td class="num">
+                                @if (IsEditing(item.Id, "actualCost"))
+                                {
+                                    <input type="number" step="0.01" value="@item.ActualCost"
+                                           @onchange='e => SaveInlineAsync(item, "actualCost", e.Value)' @onblur="CancelEdit" autofocus />
+                                }
+                                else
+                                {
+                                    <span class="editable-cell" @onclick='() => StartEdit(item.Id, "actualCost")'>
+                                        @Fmt.MoneyShort(item.ActualCost)
+                                    </span>
+                                }
+                            </td>
+
+                            <td>
+                                <select value="@item.Status" @onchange='e => SaveInlineAsync(item, "status", e.Value)'>
+                                    @foreach (var status in Enum.GetValues<ShoppingStatus>())
+                                    {
+                                        <option value="@status">@PolishLabels.For(status)</option>
+                                    }
+                                </select>
+                            </td>
+
+                            <td>
+                                <select value="@item.Priority" @onchange='e => SaveInlineAsync(item, "priority", e.Value)'>
+                                    @foreach (var priority in Enum.GetValues<ShoppingPriority>())
+                                    {
+                                        <option value="@priority">@PolishLabels.For(priority)</option>
+                                    }
+                                </select>
+                            </td>
+
+                            <td class="small">@Fmt.Text(item.Vendor)</td>
+
+                            <td class="nowrap">
+                                <button class="btn btn-sm" @onclick="() => EditItem(item)">Edytuj</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteItemAsync(item)">Usuń</button>
+                            </td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    @* ---------- widok kart na telefonie ---------- *@
+    <div class="mobile-only">
+        @foreach (var group in GroupedItems())
+        {
+            @if (_grouped)
+            {
+                <div class="row-between" style="margin:.9rem 0 .4rem">
+                    <strong>@group.Key</strong>
+                    <span class="small muted mono">@group.Count() poz. · @Fmt.MoneyShort(group.Sum(i => i.TotalCost ?? 0m))</span>
+                </div>
+            }
+
+            @foreach (var item in group)
+            {
+                <div class="item-card">
+                    <div class="item-card-head">
+                        <div>
+                            <strong>@item.OrdinalNo. @item.Name</strong>
+                            <div class="item-card-meta">
+                                <span>@Fmt.Text(item.CategoryName)</span>
+                                <span>@Fmt.Quantity(item.Quantity) @item.Unit</span>
+                                @if (!string.IsNullOrWhiteSpace(item.Vendor))
+                                {
+                                    <span>@item.Vendor</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="right nowrap">
+                            <div><strong>@Fmt.MoneyShort(item.TotalCost)</strong></div>
+                            <span class="@Fmt.StatusBadge(item.Status)">@PolishLabels.For(item.Status)</span>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(item.CalculationNotes))
+                    {
+                        <p class="small muted" style="margin:.4rem 0 0">@item.CalculationNotes</p>
+                    }
+
+                    <div class="btn-row" style="margin-top:.5rem">
+                        <button class="btn btn-sm" @onclick="() => EditItem(item)">Edytuj</button>
+                        @if (item.Status != ShoppingStatus.Bought && item.Status != ShoppingStatus.Installed)
+                        {
+                            <button class="btn btn-sm" @onclick="() => MarkBoughtAsync(item)">Kupione</button>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.Link))
+                        {
+                            <a class="btn btn-sm" href="@item.Link" target="_blank" rel="noopener noreferrer">Link</a>
+                        }
+                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteItemAsync(item)">Usuń</button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@* ---------------------------------------------------------------- panel edycji *@
+
+@if (_draft is not null)
+{
+    <div class="drawer-backdrop" @onclick="CloseDrawer"></div>
+    <div class="drawer">
+        <div class="drawer-head">
+            <h2>@(_editingId is null ? "Nowa pozycja" : "Edycja pozycji")</h2>
+            <button class="btn btn-sm" @onclick="CloseDrawer">Zamknij</button>
+        </div>
+
+        <EditForm Model="_draft" OnValidSubmit="SaveDraftAsync" FormName="shopping-item">
+            <DataAnnotationsValidator />
+
+            <div class="drawer-body">
+                <StatusMessage Error="@_drawerError" />
+
+                <div class="field">
+                    <label for="i-name">Pozycja</label>
+                    <InputText id="i-name" @bind-Value="_draft.Name" />
+                    <ValidationMessage For="() => _draft.Name" />
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="i-property">Mieszkanie</label>
+                        <select id="i-property" value="@_draft.PropertyId" @onchange="OnDraftPropertyChangedAsync">
+                            @foreach (var property in _properties)
+                            {
+                                <option value="@property.Id">@property.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="i-room">Pomieszczenie</label>
+                        <select id="i-room" value="@(_draft.RoomId?.ToString() ?? "")"
+                                @onchange="e => _draft.RoomId = ParseNullableInt(e.Value)">
+                            <option value="">@ShoppingConstants.WholePropertyRoomName</option>
+                            @foreach (var room in _draftRooms)
+                            {
+                                <option value="@room.Id">@room.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="i-category">Kategoria</label>
+                    <select id="i-category" value="@(_draft.ShoppingCategoryId?.ToString() ?? "")"
+                            @onchange="e => _draft.ShoppingCategoryId = ParseNullableInt(e.Value)">
+                        <option value="">— bez kategorii —</option>
+                        @foreach (var category in _categories)
+                        {
+                            <option value="@category.Id">@category.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field">
+                    <label for="i-desc">Opis</label>
+                    <InputTextArea id="i-desc" @bind-Value="_draft.Description" />
+                </div>
+
+                <div class="field">
+                    <label for="i-calc">Uwagi / obliczenia</label>
+                    <InputTextArea id="i-calc" @bind-Value="_draft.CalculationNotes" />
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="i-qty">Ilość</label>
+                        <InputNumber id="i-qty" step="0.001" @bind-Value="_draft.Quantity" />
+                    </div>
+                    <div class="field">
+                        <label for="i-unit">Jednostka</label>
+                        <InputText id="i-unit" @bind-Value="_draft.Unit" placeholder="szt. / m² / l / opak. / mb" />
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="i-unitcost">~Koszt szt.</label>
+                        <InputNumber id="i-unitcost" step="0.01" @bind-Value="_draft.UnitCost" />
+                    </div>
+                    <div class="field">
+                        <label for="i-total">~Koszt całk. (puste = ilość × koszt szt.)</label>
+                        <InputNumber id="i-total" step="0.01" @bind-Value="_draft.TotalCost" />
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="i-budget">Planowany budżet (z amortyzacją)</label>
+                        <InputNumber id="i-budget" step="0.01" @bind-Value="_draft.PlannedBudget" />
+                    </div>
+                    <div class="field">
+                        <label for="i-actual">Rzeczywisty koszt</label>
+                        <InputNumber id="i-actual" step="0.01" @bind-Value="_draft.ActualCost" />
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="i-status">Status</label>
+                        <InputSelect id="i-status" @bind-Value="_draft.Status">
+                            @foreach (var status in Enum.GetValues<ShoppingStatus>())
+                            {
+                                <option value="@status">@PolishLabels.For(status)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="field">
+                        <label for="i-priority">Priorytet</label>
+                        <InputSelect id="i-priority" @bind-Value="_draft.Priority">
+                            @foreach (var priority in Enum.GetValues<ShoppingPriority>())
+                            {
+                                <option value="@priority">@PolishLabels.For(priority)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="i-vendor">Wykonawca / sklep</label>
+                        <InputText id="i-vendor" @bind-Value="_draft.Vendor" />
+                    </div>
+                    <div class="field">
+                        <label for="i-who">Kto kupuje</label>
+                        <InputText id="i-who" @bind-Value="_draft.AssignedTo" />
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label for="i-link">Link</label>
+                    <InputText id="i-link" @bind-Value="_draft.Link" placeholder="https://…" />
+                </div>
+
+                <div class="grid-2">
+                    <div class="field">
+                        <label for="i-date">Data zakupu</label>
+                        <InputDate id="i-date" @bind-Value="_draft.PurchaseDate" />
+                    </div>
+                    <div class="field">
+                        <label for="i-invoice">Powiązana faktura</label>
+                        <select id="i-invoice" value="@(_draft.InvoiceId?.ToString() ?? "")"
+                                @onchange="e => _draft.InvoiceId = ParseNullableInt(e.Value)">
+                            <option value="">— brak —</option>
+                            @foreach (var invoice in _invoices)
+                            {
+                                <option value="@invoice.Id">
+                                    @Fmt.Date(invoice.IssueDate) · @Fmt.Text(invoice.Vendor) · @Fmt.MoneyShort(invoice.Amount)
+                                </option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="drawer-foot">
+                <button class="btn btn-primary" type="submit" disabled="@_saving">Zapisz</button>
+                <button class="btn" type="button" @onclick="CloseDrawer">Anuluj</button>
+            </div>
+        </EditForm>
+    </div>
+}
+
+@code {
+    private List<ShoppingItemDto> _items = [];
+    private ShoppingSummaryDto? _summary;
+    private List<PropertyDto> _properties = [];
+    private List<RoomDto> _rooms = [];
+    private List<RoomDto> _draftRooms = [];
+    private List<LookupDto> _categories = [];
+    private List<InvoiceDto> _invoices = [];
+
+    private int? _propertyId;
+    private int? _roomId;
+    private int? _categoryId;
+    private ShoppingStatus? _status;
+    private ShoppingPriority? _priority;
+    private string? _search;
+    private string? _sort;
+    private bool _grouped = true;
+
+    private ShoppingItemUpsertDto? _draft;
+    private int? _editingId;
+    private (int ItemId, string Field)? _editingCell;
+
+    private bool _loading = true;
+    private bool _saving;
+    private bool _importing;
+    private bool _showTools;
+    private ShoppingImportResultDto? _importResult;
+
+    private string? _error;
+    private string? _success;
+    private string? _drawerError;
+
+    [SupplyParameterFromQuery(Name = "mieszkanie")]
+    private int? PropertyFromQuery { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _properties = await State.GetPropertiesAsync();
+            _categories = await State.GetShoppingCategoriesAsync();
+
+            _propertyId = PropertyFromQuery ?? State.SelectedPropertyId;
+            await LoadRoomsAsync();
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+            _loading = false;
+        }
+    }
+
+    // ---------------------------------------------------------------- ładowanie
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            _items = await Api.GetShoppingItemsAsync(BuildQuery());
+            _summary = await Api.GetShoppingSummaryAsync(_propertyId);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadRoomsAsync() =>
+        _rooms = _propertyId.HasValue ? await State.GetRoomsAsync(_propertyId.Value) : [];
+
+    /// <summary>Query string wspólny dla listy i eksportów — eksport ma pokazywać to samo, co ekran.</summary>
+    private string BuildQuery()
+    {
+        var parts = new List<string>();
+
+        if (_propertyId.HasValue)
+        {
+            parts.Add($"propertyId={_propertyId}");
+        }
+
+        if (_roomId.HasValue)
+        {
+            parts.Add($"roomId={_roomId}");
+        }
+
+        if (_categoryId.HasValue)
+        {
+            parts.Add($"categoryId={_categoryId}");
+        }
+
+        if (_status.HasValue)
+        {
+            parts.Add($"status={_status}");
+        }
+
+        if (_priority.HasValue)
+        {
+            parts.Add($"priority={_priority}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            parts.Add($"search={Uri.EscapeDataString(_search)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(_sort))
+        {
+            parts.Add($"sort={_sort}");
+        }
+
+        return parts.Count == 0 ? string.Empty : "?" + string.Join('&', parts);
+    }
+
+    private IEnumerable<IGrouping<string, ShoppingItemDto>> GroupedItems() =>
+        _grouped
+            ? _items.GroupBy(i => i.RoomName)
+            : _items.GroupBy(_ => string.Empty);
+
+    // ---------------------------------------------------------------- filtry
+
+    private async Task OnPropertyChangedAsync(ChangeEventArgs e)
+    {
+        _propertyId = ParseNullableInt(e.Value);
+        _roomId = null;
+
+        if (_propertyId.HasValue)
+        {
+            State.SelectProperty(_propertyId);
+        }
+
+        await LoadRoomsAsync();
+        await ReloadAsync();
+    }
+
+    private async Task OnRoomChangedAsync(ChangeEventArgs e)
+    {
+        _roomId = ParseNullableInt(e.Value);
+        await ReloadAsync();
+    }
+
+    private async Task OnCategoryChangedAsync(ChangeEventArgs e)
+    {
+        _categoryId = ParseNullableInt(e.Value);
+        await ReloadAsync();
+    }
+
+    private async Task OnStatusChangedAsync(ChangeEventArgs e)
+    {
+        _status = Enum.TryParse<ShoppingStatus>(e.Value?.ToString(), out var parsed) ? parsed : null;
+        await ReloadAsync();
+    }
+
+    private async Task OnPriorityChangedAsync(ChangeEventArgs e)
+    {
+        _priority = Enum.TryParse<ShoppingPriority>(e.Value?.ToString(), out var parsed) ? parsed : null;
+        await ReloadAsync();
+    }
+
+    private async Task OnSearchChangedAsync(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString();
+        await ReloadAsync();
+    }
+
+    private async Task SortByAsync(string column)
+    {
+        // Kolejne kliknięcie w tę samą kolumnę odwraca kierunek, trzecie wraca do grupowania.
+        if (_sort == column)
+        {
+            _sort = "-" + column;
+        }
+        else if (_sort == "-" + column)
+        {
+            _sort = null;
+            _grouped = true;
+        }
+        else
+        {
+            _sort = column;
+            _grouped = false;
+        }
+
+        await ReloadAsync();
+    }
+
+    private string SortMark(string column) =>
+        _sort == column ? "▲" : _sort == "-" + column ? "▼" : string.Empty;
+
+    // ---------------------------------------------------------------- edycja inline
+
+    private bool IsEditing(int itemId, string field) =>
+        _editingCell is { } cell && cell.ItemId == itemId && cell.Field == field;
+
+    private void StartEdit(int itemId, string field) => _editingCell = (itemId, field);
+
+    /// <summary>
+    /// Wyjście z pola bez zmiany wartości. Przeglądarka wysyła `change` przed `blur`,
+    /// więc zapis zdąży się wykonać, zanim zamkniemy edytor.
+    /// </summary>
+    private void CancelEdit() => _editingCell = null;
+
+    private async Task SaveInlineAsync(ShoppingItemDto item, string field, object? rawValue)
+    {
+        _editingCell = null;
+        var dto = ToUpsert(item);
+        var text = rawValue?.ToString();
+
+        switch (field)
+        {
+            case "name":
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return;
+                }
+
+                dto.Name = text.Trim();
+                break;
+
+            case "quantity":
+                dto.Quantity = ParseNullableDecimal(text);
+                dto.TotalCost = null; // przelicz koszt całkowity z nowej ilości
+                break;
+
+            case "unitCost":
+                dto.UnitCost = ParseNullableDecimal(text);
+                dto.TotalCost = null;
+                break;
+
+            case "totalCost":
+                dto.TotalCost = ParseNullableDecimal(text);
+                break;
+
+            case "plannedBudget":
+                dto.PlannedBudget = ParseNullableDecimal(text);
+                break;
+
+            case "actualCost":
+                dto.ActualCost = ParseNullableDecimal(text);
+                break;
+
+            case "status":
+                if (!Enum.TryParse<ShoppingStatus>(text, out var status))
+                {
+                    return;
+                }
+
+                dto.Status = status;
+                break;
+
+            case "priority":
+                if (!Enum.TryParse<ShoppingPriority>(text, out var priority))
+                {
+                    return;
+                }
+
+                dto.Priority = priority;
+                break;
+
+            default:
+                return;
+        }
+
+        await SaveItemAsync(item.Id, dto);
+    }
+
+    private async Task MarkBoughtAsync(ShoppingItemDto item)
+    {
+        var dto = ToUpsert(item);
+        dto.Status = ShoppingStatus.Bought;
+        dto.PurchaseDate ??= DateOnly.FromDateTime(DateTime.Today);
+
+        await SaveItemAsync(item.Id, dto);
+    }
+
+    private async Task SaveItemAsync(int id, ShoppingItemUpsertDto dto)
+    {
+        try
+        {
+            await Api.UpdateShoppingItemAsync(id, dto);
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    // ---------------------------------------------------------------- panel
+
+    private void NewItem()
+    {
+        _editingId = null;
+        _drawerError = null;
+        _draft = new ShoppingItemUpsertDto
+        {
+            PropertyId = _propertyId ?? _properties.FirstOrDefault()?.Id ?? 0,
+            RoomId = _roomId,
+            ShoppingCategoryId = _categoryId,
+            Status = ShoppingStatus.ToBuy,
+            Priority = ShoppingPriority.MustHave
+        };
+
+        _ = LoadDraftContextAsync();
+    }
+
+    private void EditItem(ShoppingItemDto item)
+    {
+        _editingId = item.Id;
+        _drawerError = null;
+        _draft = ToUpsert(item);
+
+        _ = LoadDraftContextAsync();
+    }
+
+    private async Task LoadDraftContextAsync()
+    {
+        if (_draft is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _draftRooms = _draft.PropertyId > 0 ? await State.GetRoomsAsync(_draft.PropertyId) : [];
+
+            var invoices = await Api.GetInvoicesAsync(new InvoiceQuery
+            {
+                PropertyId = _draft.PropertyId > 0 ? _draft.PropertyId : null,
+                PageSize = 100
+            });
+
+            _invoices = invoices.Items;
+        }
+        catch (ApiException ex)
+        {
+            _drawerError = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task OnDraftPropertyChangedAsync(ChangeEventArgs e)
+    {
+        if (_draft is null)
+        {
+            return;
+        }
+
+        _draft.PropertyId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        _draft.RoomId = null;
+        _draft.InvoiceId = null;
+
+        await LoadDraftContextAsync();
+    }
+
+    private void CloseDrawer()
+    {
+        _draft = null;
+        _editingId = null;
+    }
+
+    private async Task SaveDraftAsync()
+    {
+        if (_draft is null)
+        {
+            return;
+        }
+
+        _saving = true;
+        _drawerError = null;
+
+        try
+        {
+            if (_editingId is null)
+            {
+                await Api.CreateShoppingItemAsync(_draft);
+                _success = "Pozycja dodana.";
+            }
+            else
+            {
+                await Api.UpdateShoppingItemAsync(_editingId.Value, _draft);
+                _success = "Pozycja zapisana.";
+            }
+
+            CloseDrawer();
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _drawerError = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DeleteItemAsync(ShoppingItemDto item)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Usunąć pozycję „{item.Name}”?"))
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteShoppingItemAsync(item.Id);
+            _success = "Pozycja usunięta.";
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    // ---------------------------------------------------------------- import
+
+    private async Task ImportAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        _error = null;
+        _importResult = null;
+
+        if (file is null)
+        {
+            return;
+        }
+
+        if (_propertyId is null)
+        {
+            _error = "Wybierz najpierw mieszkanie, do którego importujemy arkusz.";
+            return;
+        }
+
+        _importing = true;
+
+        try
+        {
+            const long maxSize = 20 * 1024 * 1024;
+
+            using var buffer = new MemoryStream();
+            await using (var source = file.OpenReadStream(maxSize))
+            {
+                await source.CopyToAsync(buffer);
+            }
+
+            buffer.Position = 0;
+
+            _importResult = await Api.ImportShoppingAsync(buffer, file.Name, _propertyId.Value);
+
+            State.InvalidateRooms(_propertyId.Value);
+            _rooms = await State.GetRoomsAsync(_propertyId.Value, refresh: true);
+            _categories = await State.GetShoppingCategoriesAsync(refresh: true);
+
+            await ReloadAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (IOException ex)
+        {
+            _error = $"Nie udało się odczytać pliku: {ex.Message}";
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    // ---------------------------------------------------------------- pomocnicze
+
+    private static ShoppingItemUpsertDto ToUpsert(ShoppingItemDto item) => new()
+    {
+        PropertyId = item.PropertyId,
+        RoomId = item.RoomId,
+        ShoppingCategoryId = item.ShoppingCategoryId,
+        Name = item.Name,
+        Description = item.Description,
+        CalculationNotes = item.CalculationNotes,
+        Quantity = item.Quantity,
+        Unit = item.Unit,
+        UnitCost = item.UnitCost,
+        TotalCost = item.TotalCost,
+        PlannedBudget = item.PlannedBudget,
+        ActualCost = item.ActualCost,
+        Vendor = item.Vendor,
+        Link = item.Link,
+        Status = item.Status,
+        Priority = item.Priority,
+        PurchaseDate = item.PurchaseDate,
+        InvoiceId = item.InvoiceId,
+        AssignedTo = item.AssignedTo,
+        OrdinalNo = item.OrdinalNo
+    };
+
+    private static int? ParseNullableInt(object? value) =>
+        int.TryParse(value?.ToString(), out var parsed) ? parsed : null;
+
+    private static decimal? ParseNullableDecimal(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? null
+            : decimal.TryParse(text.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null;
+
+    private static string ProgressWidth(decimal percent)
+    {
+        var clamped = Math.Clamp(percent, 0m, 100m);
+        return $"width:{clamped.ToString("0.#", CultureInfo.InvariantCulture)}%";
+    }
+}

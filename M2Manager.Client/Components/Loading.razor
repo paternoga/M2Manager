@@ -1,0 +1,10 @@
+@* Wskaźnik ładowania z opcjonalnym tekstem. *@
+
+<div class="splash">
+    <div class="spinner"></div>
+    <p class="muted">@(string.IsNullOrWhiteSpace(Text) ? "Wczytywanie…" : Text)</p>
+</div>
+
+@code {
+    [Parameter] public string? Text { get; set; }
+}

@@ -1,0 +1,1053 @@
+@page "/mieszkania/{PropertyId:int}/rzut"
+@attribute [Authorize]
+@implements IDisposable
+@inject ApiClient Api
+@inject AppState State
+@inject IJSRuntime Js
+@inject NavigationManager Navigation
+
+<PageTitle>Edytor rzutu — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Edytor rzutu</h1>
+        <p class="muted small">@(_areas?.PropertyName ?? "—") · siatka 10 cm · skala 1 m = @(_zoom * 50) px</p>
+    </div>
+    <div class="btn-row">
+        <button class="btn btn-primary" @onclick="SaveAsync" disabled="@(!_dirty || _saving)">
+            @(_saving ? "Zapisywanie…" : _dirty ? "Zapisz rzut" : "Zapisano")
+        </button>
+        <a class="btn" href="mieszkania">Wróć do mieszkań</a>
+    </div>
+</div>
+
+<StatusMessage Error="@_error" Success="@_success" />
+
+@if (_loading)
+{
+    <Loading Text="Wczytywanie rzutu…" />
+}
+else
+{
+    <div class="plan-layout">
+        <div>
+            <div class="plan-canvas">
+                <div class="plan-toolbar">
+                    <button class="btn btn-sm" @onclick="AddRoomAsync">+ Pomieszczenie</button>
+                    <button class="btn btn-sm" @onclick="() => Zoom(1.25)">🔍+</button>
+                    <button class="btn btn-sm" @onclick="() => Zoom(0.8)">🔍−</button>
+                    <button class="btn btn-sm" @onclick="FitToContent">Dopasuj</button>
+
+                    @if (_selected is not null)
+                    {
+                        <span class="badge badge-info">@_selected.Name</span>
+                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteRoomAsync(_selected)">Usuń pomieszczenie</button>
+                    }
+                    else
+                    {
+                        <span class="small muted">Kliknij pomieszczenie, żeby je wybrać.</span>
+                    }
+                </div>
+
+                <svg @ref="_svg"
+                     viewBox="@ViewBox"
+                     width="@_viewWidth.ToString("0", Inv)"
+                     height="@_viewHeight.ToString("0", Inv)"
+                     xmlns="http://www.w3.org/2000/svg"
+                     @onpointermove="OnPointerMove"
+                     @onpointerup="OnPointerUp"
+                     @onpointerleave="OnPointerUp">
+
+                    <defs>
+                        <pattern id="grid-minor" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#e2e6eb" stroke-width="0.6" />
+                        </pattern>
+                        <pattern id="grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
+                            <rect width="100" height="100" fill="url(#grid-minor)" />
+                            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#c9d1da" stroke-width="1.4" />
+                        </pattern>
+                    </defs>
+
+                    <rect x="@(_viewX - 2000)" y="@(_viewY - 2000)"
+                          width="@(_viewWidth + 4000)" height="@(_viewHeight + 4000)"
+                          fill="url(#grid-major)" @onclick="ClearSelection" />
+
+                    @foreach (var room in _rooms)
+                    {
+                        var selected = _selected?.RoomId == room.RoomId;
+
+                        <g class="room-shape @(selected ? "selected" : "")">
+                            <rect class="room-body"
+                                  x="@Num(room.X)" y="@Num(room.Y)"
+                                  width="@Num(room.WidthCm)" height="@Num(room.HeightCm)"
+                                  @onpointerdown="e => StartDragAsync(e, room)" />
+
+                            @* niewidzialne, grube linie na krawędziach — kliknięcie dodaje okno lub drzwi *@
+                            @foreach (var wall in Walls(room))
+                            {
+                                <line class="wall-hit"
+                                      x1="@Num(wall.X1)" y1="@Num(wall.Y1)"
+                                      x2="@Num(wall.X2)" y2="@Num(wall.Y2)"
+                                      @onclick="e => StartAddOpeningAsync(e, room, wall.Side)" />
+                            }
+
+                            @* otwory: drzwi z łukiem otwierania, okno podwójną kreską *@
+                            @foreach (var opening in OpeningShapes(room))
+                            {
+                                @if (opening.IsDoor)
+                                {
+                                    <line x1="@Num(opening.X1)" y1="@Num(opening.Y1)"
+                                          x2="@Num(opening.X2)" y2="@Num(opening.Y2)"
+                                          stroke="#ffffff" stroke-width="6" />
+                                    <path d="@opening.ArcPath" fill="none" stroke="#1f4e79" stroke-width="1.6"
+                                          stroke-dasharray="6 4" />
+                                }
+                                else
+                                {
+                                    <line x1="@Num(opening.X1)" y1="@Num(opening.Y1)"
+                                          x2="@Num(opening.X2)" y2="@Num(opening.Y2)"
+                                          stroke="#ffffff" stroke-width="6" />
+                                    <line x1="@Num(opening.X1)" y1="@Num(opening.Y1)"
+                                          x2="@Num(opening.X2)" y2="@Num(opening.Y2)"
+                                          stroke="#1f4e79" stroke-width="1.4" />
+                                    <line x1="@Num(opening.X1b)" y1="@Num(opening.Y1b)"
+                                          x2="@Num(opening.X2b)" y2="@Num(opening.Y2b)"
+                                          stroke="#1f4e79" stroke-width="1.4" />
+                                }
+                            }
+
+                            <text x="@Num(room.X + (room.WidthCm / 2))" y="@Num(room.Y + (room.HeightCm / 2) - 8)"
+                                  text-anchor="middle" font-size="16" fill="#1c2530" font-weight="600">
+                                @room.Name
+                            </text>
+                            <text x="@Num(room.X + (room.WidthCm / 2))" y="@Num(room.Y + (room.HeightCm / 2) + 14)"
+                                  text-anchor="middle" font-size="13" fill="#66707c">
+                                @FormatMeters(room.WidthCm) × @FormatMeters(room.HeightCm) m ·
+                                @Fmt.Number(room.WidthCm * room.HeightCm / 10000m) m²
+                            </text>
+
+                            @* wymiary na krawędziach *@
+                            <text x="@Num(room.X + (room.WidthCm / 2))" y="@Num(room.Y - 8)"
+                                  text-anchor="middle" font-size="12" fill="#1f4e79">
+                                @FormatMeters(room.WidthCm) m
+                            </text>
+                            <text x="@Num(room.X - 8)" y="@Num(room.Y + (room.HeightCm / 2))"
+                                  text-anchor="middle" font-size="12" fill="#1f4e79"
+                                  transform="@($"rotate(-90 {Num(room.X - 8)} {Num(room.Y + (room.HeightCm / 2))})")">
+                                @FormatMeters(room.HeightCm) m
+                            </text>
+
+                            @if (selected)
+                            {
+                                <rect class="resize-handle"
+                                      x="@Num(room.X + room.WidthCm - 9)" y="@Num(room.Y + room.HeightCm - 9)"
+                                      width="18" height="18" rx="3"
+                                      @onpointerdown="e => StartResizeAsync(e, room)" />
+                            }
+                        </g>
+                    }
+                </svg>
+
+                <div class="legend">
+                    <span>▭ pomieszczenie</span>
+                    <span>⌐ drzwi (łuk otwierania)</span>
+                    <span>═ okno (podwójna kreska)</span>
+                    <span>przeciągnij, by przesunąć · uchwyt w rogu zmienia rozmiar · kliknij ścianę, by dodać otwór</span>
+                </div>
+            </div>
+        </div>
+
+        @* ---------------------------------------------------------------- panel boczny *@
+
+        <div class="plan-side">
+            @if (_selected is not null)
+            {
+                var area = SelectedArea();
+
+                <div class="card">
+                    <div class="card-title"><h2>@_selected.Name</h2></div>
+
+                    <div class="field">
+                        <label for="pl-name">Nazwa</label>
+                        <input id="pl-name" type="text" value="@_selected.Name" @onchange="OnNameChanged" />
+                    </div>
+
+                    <div class="grid-2">
+                        <div class="field">
+                            <label for="pl-length">Długość (m)</label>
+                            <input id="pl-length" type="number" step="0.01" value="@MetersValue(_selected.WidthCm)"
+                                   @onchange="OnLengthChanged" />
+                        </div>
+                        <div class="field">
+                            <label for="pl-width">Szerokość (m)</label>
+                            <input id="pl-width" type="number" step="0.01" value="@MetersValue(_selected.HeightCm)"
+                                   @onchange="OnWidthChanged" />
+                        </div>
+                    </div>
+
+                    <div class="field">
+                        <label for="pl-height">Wysokość (m)</label>
+                        <input id="pl-height" type="number" step="0.01" value="@_selected.RoomHeightM"
+                               @onchange="OnRoomHeightChanged" />
+                        <span class="small muted">Puste = domyślna dla mieszkania (@Fmt.Length(_areas?.DefaultRoomHeightM)).</span>
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <table class="data">
+                        <tbody>
+                        <tr><td>Metraż</td><td class="num">@Fmt.Number(area.FloorAreaM2) m²</td></tr>
+                        <tr><td>Wysokość</td><td class="num">@Fmt.Number(area.HeightM) m</td></tr>
+                        <tr><td>Obwód</td><td class="num">@Fmt.Number(area.PerimeterM) m</td></tr>
+                        <tr><td>Ściany brutto</td><td class="num">@Fmt.Number(area.GrossWallAreaM2) m²</td></tr>
+                        <tr><td>Suma otworów</td><td class="num">@Fmt.Number(area.OpeningsAreaM2) m²</td></tr>
+                        <tr><td><strong>Ściany netto</strong></td><td class="num"><strong>@Fmt.Number(area.NetWallAreaM2) m²</strong></td></tr>
+                        <tr><td>Sufit</td><td class="num">@Fmt.Number(area.CeilingAreaM2) m²</td></tr>
+                        </tbody>
+                    </table>
+
+                    <div class="divider"></div>
+
+                    <div class="card-title">
+                        <h3>Okna i drzwi</h3>
+                        <button class="btn btn-sm" @onclick="() => StartAddOpening(_selected, WallSide.North, null)">
+                            + Dodaj
+                        </button>
+                    </div>
+
+                    @if (_selected.Openings.Count == 0)
+                    {
+                        <p class="small muted">Brak otworów. Kliknij ścianę na rzucie, żeby dodać okno lub drzwi.</p>
+                    }
+
+                    @foreach (var opening in _selected.Openings.ToList())
+                    {
+                        <div class="row-between small" style="margin-bottom:.35rem">
+                            <span>
+                                @PolishLabels.For(opening.Type) @opening.WidthCm×@opening.HeightCm cm
+                                @if (opening.WallSide.HasValue)
+                                {
+                                    <span class="muted"> · @PolishLabels.For(opening.WallSide.Value)</span>
+                                }
+                            </span>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteOpeningAsync(opening)">Usuń</button>
+                        </div>
+                    }
+
+                    @if (_openingDraft is not null)
+                    {
+                        <div class="divider"></div>
+                        <h3>Nowy otwór</h3>
+
+                        <div class="grid-2">
+                            <div class="field">
+                                <label for="op-type">Rodzaj</label>
+                                <select id="op-type" value="@_openingDraft.Type" @onchange="OnOpeningTypeChanged">
+                                    @foreach (var type in Enum.GetValues<OpeningType>())
+                                    {
+                                        <option value="@type">@PolishLabels.For(type)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="op-side">Ściana</label>
+                                <select id="op-side" value="@(_openingDraft.WallSide ?? WallSide.North)"
+                                        @onchange="OnOpeningSideChanged">
+                                    @foreach (var side in Enum.GetValues<WallSide>())
+                                    {
+                                        <option value="@side">@PolishLabels.For(side)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="op-w">Szerokość (cm)</label>
+                                <input id="op-w" type="number" value="@_openingDraft.WidthCm" @onchange="OnOpeningWidthChanged" />
+                            </div>
+                            <div class="field">
+                                <label for="op-h">Wysokość (cm)</label>
+                                <input id="op-h" type="number" value="@_openingDraft.HeightCm" @onchange="OnOpeningHeightChanged" />
+                            </div>
+                            <div class="field">
+                                <label for="op-count">Sztuk</label>
+                                <input id="op-count" type="number" value="@_openingDraft.Count" @onchange="OnOpeningCountChanged" />
+                            </div>
+                            <div class="field">
+                                <label for="op-offset">Odsunięcie (cm)</label>
+                                <input id="op-offset" type="number" value="@_openingDraft.OffsetCm" @onchange="OnOpeningOffsetChanged" />
+                            </div>
+                        </div>
+
+                        <label class="checkbox">
+                            <input type="checkbox" checked="@_openingDraft.SubtractFromWalls"
+                                   @onchange="e => _openingDraft.SubtractFromWalls = e.Value is true" />
+                            <span>Odejmij od powierzchni ścian</span>
+                        </label>
+
+                        <div class="btn-row">
+                            <button class="btn btn-sm btn-primary" @onclick="SaveOpeningAsync">Zapisz otwór</button>
+                            <button class="btn btn-sm" @onclick="() => _openingDraft = null">Anuluj</button>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="card">
+                    <p class="muted small">
+                        Wybierz pomieszczenie na rzucie, żeby zobaczyć jego wymiary i wyliczenia,
+                        albo dodaj nowe przyciskiem „+ Pomieszczenie”.
+                    </p>
+                </div>
+            }
+
+            @if (_areas is not null)
+            {
+                <div class="card">
+                    <div class="card-title"><h2>Całe mieszkanie</h2></div>
+
+                    <div class="grid-2">
+                        <div class="metric">
+                            <div class="metric-label">Suma metrażu</div>
+                            <div class="metric-value">@Fmt.Area(LiveSummary.TotalFloorAreaM2)</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">Ściany netto</div>
+                            <div class="metric-value">@Fmt.Area(LiveSummary.TotalNetWallAreaM2)</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">Sufity</div>
+                            <div class="metric-value">@Fmt.Area(LiveSummary.TotalCeilingAreaM2)</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-label">Ściany + sufity</div>
+                            <div class="metric-value">@Fmt.Area(LiveSummary.TotalWallsAndCeilingM2)</div>
+                        </div>
+                    </div>
+
+                    @if (_dirty)
+                    {
+                        <p class="small muted" style="margin-top:.6rem">
+                            Masz niezapisane zmiany w rzucie.
+                        </p>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+    /// <summary>Przyciąganie do siatki co 10 cm.</summary>
+    private const decimal Snap = 10m;
+
+    private const decimal MinSizeCm = 50m;
+
+    [Parameter] public int PropertyId { get; set; }
+
+    private ElementReference _svg;
+    private readonly List<PlanRoom> _rooms = [];
+    private PropertyAreasDto? _areas;
+    private PlanRoom? _selected;
+    private RoomOpeningUpsertDto? _openingDraft;
+
+    private double _viewX, _viewY;
+    private double _viewWidth = 1200, _viewHeight = 800;
+    private double _zoom = 1;
+
+    private DragState? _drag;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _dirty;
+    private string? _error;
+    private string? _success;
+
+    private string ViewBox =>
+        $"{_viewX.ToString("0.##", Inv)} {_viewY.ToString("0.##", Inv)} " +
+        $"{_viewWidth.ToString("0.##", Inv)} {_viewHeight.ToString("0.##", Inv)}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            var rooms = await State.GetRoomsAsync(PropertyId, refresh: true);
+            _areas = await Api.GetAreasAsync(PropertyId);
+
+            _rooms.Clear();
+
+            var fallbackX = 0m;
+            foreach (var room in rooms.OrderBy(r => r.SortOrder).ThenBy(r => r.Id))
+            {
+                var geometry = RoomGeometry.Parse(room.GeometryJson);
+
+                if (geometry is null || geometry.WidthCm <= 0 || geometry.HeightCm <= 0)
+                {
+                    // Pomieszczenie bez rysunku: rozkładamy je w rzędzie, licząc wymiary z pól liczbowych.
+                    var width = (room.LengthM ?? 3m) * 100m;
+                    var height = (room.WidthM ?? 3m) * 100m;
+
+                    geometry = new RoomGeometry { X = fallbackX, Y = 0, WidthCm = width, HeightCm = height };
+                    fallbackX += width + 40m;
+                }
+
+                _rooms.Add(new PlanRoom
+                {
+                    RoomId = room.Id,
+                    Name = room.Name,
+                    X = geometry.X,
+                    Y = geometry.Y,
+                    WidthCm = geometry.WidthCm,
+                    HeightCm = geometry.HeightCm,
+                    RoomHeightM = room.HeightM,
+                    IncludeInTotals = room.IncludeInTotals,
+                    ManualWallAreaM2 = room.ManualWallAreaM2,
+                    ExcludedWallAreaM2 = room.ExcludedWallAreaM2,
+                    ManualCeilingAreaM2 = room.ManualCeilingAreaM2,
+                    Openings = room.Openings.ToList()
+                });
+            }
+
+            FitToContent();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    // ---------------------------------------------------------------- widok
+
+    private void Zoom(double factor)
+    {
+        // Powiększamy wokół środka widoku, żeby rysunek nie uciekał na bok.
+        var centerX = _viewX + (_viewWidth / 2);
+        var centerY = _viewY + (_viewHeight / 2);
+
+        _zoom = Math.Clamp(_zoom * factor, 0.2, 6);
+
+        _viewWidth = 1200 / _zoom;
+        _viewHeight = 800 / _zoom;
+        _viewX = centerX - (_viewWidth / 2);
+        _viewY = centerY - (_viewHeight / 2);
+    }
+
+    private void FitToContent()
+    {
+        if (_rooms.Count == 0)
+        {
+            _viewX = -100;
+            _viewY = -100;
+            _viewWidth = 1200;
+            _viewHeight = 800;
+            _zoom = 1;
+            return;
+        }
+
+        var minX = (double)_rooms.Min(r => r.X);
+        var minY = (double)_rooms.Min(r => r.Y);
+        var maxX = (double)_rooms.Max(r => r.X + r.WidthCm);
+        var maxY = (double)_rooms.Max(r => r.Y + r.HeightCm);
+
+        const double margin = 120;
+
+        var width = Math.Max(600, maxX - minX + (2 * margin));
+        var height = Math.Max(400, maxY - minY + (2 * margin));
+
+        // Utrzymujemy proporcję 3:2, żeby SVG nie zmieniał kształtu przy każdym dopasowaniu.
+        var ratio = 1200.0 / 800.0;
+        if (width / height < ratio)
+        {
+            width = height * ratio;
+        }
+        else
+        {
+            height = width / ratio;
+        }
+
+        _viewWidth = width;
+        _viewHeight = height;
+        _viewX = ((minX + maxX) / 2) - (width / 2);
+        _viewY = ((minY + maxY) / 2) - (height / 2);
+        _zoom = 1200 / width;
+    }
+
+    private void ClearSelection()
+    {
+        _selected = null;
+        _openingDraft = null;
+    }
+
+    // ---------------------------------------------------------------- przeciąganie
+
+    private async Task StartDragAsync(PointerEventArgs e, PlanRoom room)
+    {
+        _selected = room;
+        _openingDraft = null;
+
+        var unitsPerPixel = await Js.InvokeAsync<double>("m2plan.unitsPerPixel", _svg);
+
+        _drag = new DragState
+        {
+            Room = room,
+            Mode = DragMode.Move,
+            StartClientX = e.ClientX,
+            StartClientY = e.ClientY,
+            StartX = room.X,
+            StartY = room.Y,
+            StartWidth = room.WidthCm,
+            StartHeight = room.HeightCm,
+            UnitsPerPixel = unitsPerPixel
+        };
+    }
+
+    private async Task StartResizeAsync(PointerEventArgs e, PlanRoom room)
+    {
+        _selected = room;
+        _openingDraft = null;
+
+        var unitsPerPixel = await Js.InvokeAsync<double>("m2plan.unitsPerPixel", _svg);
+
+        _drag = new DragState
+        {
+            Room = room,
+            Mode = DragMode.Resize,
+            StartClientX = e.ClientX,
+            StartClientY = e.ClientY,
+            StartX = room.X,
+            StartY = room.Y,
+            StartWidth = room.WidthCm,
+            StartHeight = room.HeightCm,
+            UnitsPerPixel = unitsPerPixel
+        };
+    }
+
+    private void OnPointerMove(PointerEventArgs e)
+    {
+        if (_drag is null)
+        {
+            return;
+        }
+
+        var dx = (decimal)((e.ClientX - _drag.StartClientX) * _drag.UnitsPerPixel);
+        var dy = (decimal)((e.ClientY - _drag.StartClientY) * _drag.UnitsPerPixel);
+
+        if (_drag.Mode == DragMode.Move)
+        {
+            _drag.Room.X = SnapTo(_drag.StartX + dx);
+            _drag.Room.Y = SnapTo(_drag.StartY + dy);
+        }
+        else
+        {
+            _drag.Room.WidthCm = Math.Max(MinSizeCm, SnapTo(_drag.StartWidth + dx));
+            _drag.Room.HeightCm = Math.Max(MinSizeCm, SnapTo(_drag.StartHeight + dy));
+        }
+
+        _dirty = true;
+    }
+
+    private void OnPointerUp(PointerEventArgs e) => _drag = null;
+
+    private static decimal SnapTo(decimal value) =>
+        Math.Round(value / Snap, MidpointRounding.AwayFromZero) * Snap;
+
+    // ---------------------------------------------------------------- pomieszczenia
+
+    private async Task AddRoomAsync()
+    {
+        try
+        {
+            // Nowe pomieszczenie stawiamy po prawej stronie istniejących.
+            var x = _rooms.Count == 0 ? 0m : _rooms.Max(r => r.X + r.WidthCm) + 40m;
+
+            var geometry = new RoomGeometry { X = x, Y = 0, WidthCm = 300, HeightCm = 300 };
+
+            var created = await Api.CreateRoomAsync(PropertyId, new RoomUpsertDto
+            {
+                Name = $"Pomieszczenie {_rooms.Count + 1}",
+                LengthM = 3.00m,
+                WidthM = 3.00m,
+                IncludeInTotals = true,
+                GeometryJson = geometry.ToJson()
+            });
+
+            _rooms.Add(new PlanRoom
+            {
+                RoomId = created.Id,
+                Name = created.Name,
+                X = geometry.X,
+                Y = geometry.Y,
+                WidthCm = geometry.WidthCm,
+                HeightCm = geometry.HeightCm,
+                RoomHeightM = created.HeightM,
+                IncludeInTotals = created.IncludeInTotals,
+                Openings = []
+            });
+
+            _selected = _rooms[^1];
+            State.InvalidateRooms(PropertyId);
+            FitToContent();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task DeleteRoomAsync(PlanRoom room)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Usunąć pomieszczenie „{room.Name}”?"))
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteRoomAsync(PropertyId, room.RoomId);
+            _rooms.Remove(room);
+            _selected = null;
+            State.InvalidateRooms(PropertyId);
+            _success = "Pomieszczenie usunięte.";
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void OnNameChanged(ChangeEventArgs e)
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        _selected.Name = e.Value?.ToString() ?? _selected.Name;
+        _dirty = true;
+    }
+
+    private void OnLengthChanged(ChangeEventArgs e)
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        _selected.WidthCm = Math.Max(MinSizeCm, ParseMeters(e.Value) * 100m);
+        _dirty = true;
+    }
+
+    private void OnWidthChanged(ChangeEventArgs e)
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        _selected.HeightCm = Math.Max(MinSizeCm, ParseMeters(e.Value) * 100m);
+        _dirty = true;
+    }
+
+    private void OnRoomHeightChanged(ChangeEventArgs e)
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        var value = ParseMeters(e.Value);
+        _selected.RoomHeightM = value > 0 ? value : null;
+        _dirty = true;
+    }
+
+    // ---------------------------------------------------------------- otwory
+
+    private async Task StartAddOpeningAsync(MouseEventArgs e, PlanRoom room, WallSide side)
+    {
+        _selected = room;
+
+        // Odsunięcie liczymy od punktu kliknięcia — otwór ma się pojawić tam, gdzie użytkownik wskazał.
+        var point = await Js.InvokeAsync<SvgPoint>("m2plan.toSvgPoint", _svg, e.ClientX, e.ClientY);
+
+        var offset = side is WallSide.North or WallSide.South
+            ? (decimal)point.X - room.X
+            : (decimal)point.Y - room.Y;
+
+        StartAddOpening(room, side, SnapTo(Math.Max(0m, offset)));
+    }
+
+    private void StartAddOpening(PlanRoom room, WallSide side, decimal? offsetCm)
+    {
+        _selected = room;
+        _openingDraft = new RoomOpeningUpsertDto
+        {
+            Type = OpeningType.Window,
+            WidthCm = 90,
+            HeightCm = 150,
+            Count = 1,
+            SubtractFromWalls = true,
+            WallSide = side,
+            OffsetCm = offsetCm ?? 50m
+        };
+    }
+
+    private void OnOpeningTypeChanged(ChangeEventArgs e)
+    {
+        if (_openingDraft is null || !Enum.TryParse<OpeningType>(e.Value?.ToString(), out var type))
+        {
+            return;
+        }
+
+        _openingDraft.Type = type;
+
+        // Domyślne wymiary zależą od rodzaju — drzwi są wyższe niż okno.
+        if (type is OpeningType.Door or OpeningType.Doorway)
+        {
+            _openingDraft.WidthCm = 90;
+            _openingDraft.HeightCm = 200;
+        }
+    }
+
+    private void OnOpeningSideChanged(ChangeEventArgs e)
+    {
+        if (_openingDraft is not null && Enum.TryParse<WallSide>(e.Value?.ToString(), out var side))
+        {
+            _openingDraft.WallSide = side;
+        }
+    }
+
+    private void OnOpeningWidthChanged(ChangeEventArgs e)
+    {
+        if (_openingDraft is not null)
+        {
+            _openingDraft.WidthCm = ParseMeters(e.Value);
+        }
+    }
+
+    private void OnOpeningHeightChanged(ChangeEventArgs e)
+    {
+        if (_openingDraft is not null)
+        {
+            _openingDraft.HeightCm = ParseMeters(e.Value);
+        }
+    }
+
+    private void OnOpeningCountChanged(ChangeEventArgs e)
+    {
+        if (_openingDraft is not null)
+        {
+            _openingDraft.Count = Math.Max(1, (int)ParseMeters(e.Value));
+        }
+    }
+
+    private void OnOpeningOffsetChanged(ChangeEventArgs e)
+    {
+        if (_openingDraft is not null)
+        {
+            _openingDraft.OffsetCm = ParseMeters(e.Value);
+        }
+    }
+
+    private async Task SaveOpeningAsync()
+    {
+        if (_openingDraft is null || _selected is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var created = await Api.CreateOpeningAsync(_selected.RoomId, _openingDraft);
+            _selected.Openings.Add(created);
+            _openingDraft = null;
+
+            State.InvalidateRooms(PropertyId);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task DeleteOpeningAsync(RoomOpeningDto opening)
+    {
+        if (_selected is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteOpeningAsync(_selected.RoomId, opening.Id);
+            _selected.Openings.Remove(opening);
+
+            State.InvalidateRooms(PropertyId);
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    // ---------------------------------------------------------------- zapis
+
+    private async Task SaveAsync()
+    {
+        _saving = true;
+        _error = null;
+
+        try
+        {
+            var request = new LayoutSaveRequest
+            {
+                Rooms = _rooms.Select(room => new RoomLayoutDto
+                {
+                    RoomId = room.RoomId,
+                    GeometryJson = new RoomGeometry
+                    {
+                        X = room.X,
+                        Y = room.Y,
+                        WidthCm = room.WidthCm,
+                        HeightCm = room.HeightCm
+                    }.ToJson(),
+                    LengthM = Math.Round(room.WidthCm / 100m, 2, MidpointRounding.AwayFromZero),
+                    WidthM = Math.Round(room.HeightCm / 100m, 2, MidpointRounding.AwayFromZero),
+                    FloorAreaM2 = Math.Round(room.WidthCm * room.HeightCm / 10000m, 2, MidpointRounding.AwayFromZero)
+                }).ToList()
+            };
+
+            _areas = await Api.SaveLayoutAsync(PropertyId, request);
+
+            // Nazwy i wysokości nie idą batchem — zapisujemy je osobno dla zmienionych pomieszczeń.
+            var current = await State.GetRoomsAsync(PropertyId, refresh: true);
+
+            foreach (var room in _rooms)
+            {
+                var original = current.FirstOrDefault(r => r.Id == room.RoomId);
+                if (original is null || (original.Name == room.Name && original.HeightM == room.RoomHeightM))
+                {
+                    continue;
+                }
+
+                await Api.UpdateRoomAsync(PropertyId, room.RoomId, new RoomUpsertDto
+                {
+                    Name = room.Name,
+                    SortOrder = original.SortOrder,
+                    FloorAreaM2 = Math.Round(room.WidthCm * room.HeightCm / 10000m, 2, MidpointRounding.AwayFromZero),
+                    LengthM = Math.Round(room.WidthCm / 100m, 2, MidpointRounding.AwayFromZero),
+                    WidthM = Math.Round(room.HeightCm / 100m, 2, MidpointRounding.AwayFromZero),
+                    HeightM = room.RoomHeightM,
+                    ManualWallAreaM2 = original.ManualWallAreaM2,
+                    ExcludedWallAreaM2 = original.ExcludedWallAreaM2,
+                    ManualCeilingAreaM2 = original.ManualCeilingAreaM2,
+                    IncludeInTotals = original.IncludeInTotals,
+                    Notes = original.Notes,
+                    GeometryJson = new RoomGeometry
+                    {
+                        X = room.X,
+                        Y = room.Y,
+                        WidthCm = room.WidthCm,
+                        HeightCm = room.HeightCm
+                    }.ToJson()
+                });
+            }
+
+            State.InvalidateRooms(PropertyId);
+            _areas = await Api.GetAreasAsync(PropertyId);
+
+            _dirty = false;
+            _success = "Rzut zapisany.";
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    // ---------------------------------------------------------------- geometria pomocnicza
+
+    private static IEnumerable<WallSegment> Walls(PlanRoom r) =>
+    [
+        new(WallSide.North, r.X, r.Y, r.X + r.WidthCm, r.Y),
+        new(WallSide.East, r.X + r.WidthCm, r.Y, r.X + r.WidthCm, r.Y + r.HeightCm),
+        new(WallSide.South, r.X, r.Y + r.HeightCm, r.X + r.WidthCm, r.Y + r.HeightCm),
+        new(WallSide.West, r.X, r.Y, r.X, r.Y + r.HeightCm)
+    ];
+
+    /// <summary>Zamienia otwory na odcinki do narysowania na odpowiedniej ścianie.</summary>
+    private static IEnumerable<OpeningShape> OpeningShapes(PlanRoom room)
+    {
+        foreach (var opening in room.Openings)
+        {
+            var side = opening.WallSide ?? WallSide.North;
+            var width = opening.WidthCm;
+            var offset = opening.OffsetCm ?? 30m;
+            var isDoor = opening.Type is OpeningType.Door or OpeningType.Doorway;
+
+            decimal x1, y1, x2, y2, x1b, y1b, x2b, y2b, arcX, arcY;
+
+            switch (side)
+            {
+                case WallSide.North:
+                    offset = Clamp(offset, room.WidthCm - width);
+                    x1 = room.X + offset;
+                    y1 = room.Y;
+                    x2 = x1 + width;
+                    y2 = room.Y;
+                    x1b = x1; y1b = y1 + 5; x2b = x2; y2b = y2 + 5;
+                    arcX = x2; arcY = y1 + width;
+                    break;
+
+                case WallSide.South:
+                    offset = Clamp(offset, room.WidthCm - width);
+                    x1 = room.X + offset;
+                    y1 = room.Y + room.HeightCm;
+                    x2 = x1 + width;
+                    y2 = y1;
+                    x1b = x1; y1b = y1 - 5; x2b = x2; y2b = y2 - 5;
+                    arcX = x2; arcY = y1 - width;
+                    break;
+
+                case WallSide.East:
+                    offset = Clamp(offset, room.HeightCm - width);
+                    x1 = room.X + room.WidthCm;
+                    y1 = room.Y + offset;
+                    x2 = x1;
+                    y2 = y1 + width;
+                    x1b = x1 - 5; y1b = y1; x2b = x2 - 5; y2b = y2;
+                    arcX = x1 - width; arcY = y2;
+                    break;
+
+                default: // West
+                    offset = Clamp(offset, room.HeightCm - width);
+                    x1 = room.X;
+                    y1 = room.Y + offset;
+                    x2 = x1;
+                    y2 = y1 + width;
+                    x1b = x1 + 5; y1b = y1; x2b = x2 + 5; y2b = y2;
+                    arcX = x1 + width; arcY = y2;
+                    break;
+            }
+
+            yield return new OpeningShape(
+                isDoor, x1, y1, x2, y2, x1b, y1b, x2b, y2b,
+                $"M {Num(x1)} {Num(y1)} A {Num(width)} {Num(width)} 0 0 1 {Num(arcX)} {Num(arcY)}");
+        }
+    }
+
+    private static decimal Clamp(decimal offset, decimal max) =>
+        max <= 0 ? 0m : Math.Clamp(offset, 0m, max);
+
+    // ---------------------------------------------------------------- wyliczenia
+
+    private RoomAreaResult SelectedArea() =>
+        _selected is null ? new RoomAreaResult() : CalculateArea(_selected);
+
+    private RoomAreaResult CalculateArea(PlanRoom room) =>
+        AreaCalculator.Calculate(room.ToAreaSource(), room.Openings, _areas?.DefaultRoomHeightM);
+
+    /// <summary>Podsumowanie liczone w przeglądarce — aktualne również przed zapisem rzutu.</summary>
+    private PropertyAreaSummary LiveSummary =>
+        AreaCalculator.Summarize(
+            _rooms.Select(r => ((IRoomAreaSource)r.ToAreaSource(), CalculateArea(r))));
+
+    // ---------------------------------------------------------------- formatowanie
+
+    private static string Num(decimal value) =>
+        value.ToString("0.##", Inv);
+
+    private static string FormatMeters(decimal centimeters) =>
+        (centimeters / 100m).ToString("0.00", Inv);
+
+    private static string MetersValue(decimal centimeters) =>
+        (centimeters / 100m).ToString("0.##", Inv);
+
+    private static decimal ParseMeters(object? value) =>
+        decimal.TryParse(value?.ToString(), NumberStyles.Any, Inv, out var parsed) ? parsed : 0m;
+
+    public void Dispose() => _drag = null;
+
+    // ---------------------------------------------------------------- typy pomocnicze
+
+    private enum DragMode
+    {
+        Move,
+        Resize
+    }
+
+    private sealed class DragState
+    {
+        public required PlanRoom Room { get; init; }
+        public required DragMode Mode { get; init; }
+        public double StartClientX { get; init; }
+        public double StartClientY { get; init; }
+        public decimal StartX { get; init; }
+        public decimal StartY { get; init; }
+        public decimal StartWidth { get; init; }
+        public decimal StartHeight { get; init; }
+        public double UnitsPerPixel { get; init; } = 1;
+    }
+
+    /// <summary>Pomieszczenie w edytorze — wszystko w centymetrach, jak siatka.</summary>
+    private sealed class PlanRoom
+    {
+        public int RoomId { get; init; }
+        public string Name { get; set; } = string.Empty;
+        public decimal X { get; set; }
+        public decimal Y { get; set; }
+        public decimal WidthCm { get; set; }
+        public decimal HeightCm { get; set; }
+        public decimal? RoomHeightM { get; set; }
+        public bool IncludeInTotals { get; init; } = true;
+        public decimal? ManualWallAreaM2 { get; init; }
+        public decimal? ExcludedWallAreaM2 { get; init; }
+        public decimal? ManualCeilingAreaM2 { get; init; }
+        public List<RoomOpeningDto> Openings { get; init; } = [];
+
+        /// <summary>Rzutuje stan edytora na kontrakt kalkulatora — ten sam, którego używa serwer.</summary>
+        public RoomDto ToAreaSource() => new()
+        {
+            Id = RoomId,
+            Name = Name,
+            LengthM = WidthCm / 100m,
+            WidthM = HeightCm / 100m,
+            HeightM = RoomHeightM,
+            FloorAreaM2 = WidthCm * HeightCm / 10000m,
+            ManualWallAreaM2 = ManualWallAreaM2,
+            ExcludedWallAreaM2 = ExcludedWallAreaM2,
+            ManualCeilingAreaM2 = ManualCeilingAreaM2,
+            IncludeInTotals = IncludeInTotals,
+            Openings = Openings
+        };
+    }
+
+    private sealed record WallSegment(WallSide Side, decimal X1, decimal Y1, decimal X2, decimal Y2);
+
+    private sealed record OpeningShape(
+        bool IsDoor,
+        decimal X1, decimal Y1, decimal X2, decimal Y2,
+        decimal X1b, decimal Y1b, decimal X2b, decimal Y2b,
+        string ArcPath);
+
+    private sealed class SvgPoint
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+    }
+}

@@ -1,0 +1,131 @@
+@page "/"
+@attribute [Authorize]
+@inject ApiClient Api
+
+<PageTitle>Pulpit — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Pulpit</h1>
+        <p class="muted small">@(_dashboard is null ? "—" : _dashboard.PeriodLabel)</p>
+    </div>
+    <div class="btn-row">
+        <a class="btn btn-primary" href="faktury/dodaj">📷 Dodaj fakturę</a>
+        <a class="btn" href="zakupy">🛒 Lista zakupów</a>
+    </div>
+</div>
+
+<StatusMessage Error="@_error" />
+
+@if (_loading)
+{
+    <Loading Text="Liczenie podsumowań…" />
+}
+else if (_dashboard is null || _dashboard.Tiles.Count == 0)
+{
+    <div class="card empty-state">
+        <span class="emoji">🏠</span>
+        <p>Nie ma jeszcze żadnego mieszkania.</p>
+        <a class="btn btn-primary" href="mieszkania">Dodaj mieszkanie</a>
+    </div>
+}
+else
+{
+    <div class="grid">
+        @foreach (var tile in _dashboard.Tiles)
+        {
+            <div class="card">
+                <div class="card-title">
+                    <h2>@tile.PropertyName</h2>
+                    <span class="badge">@PolishLabels.For(tile.Purpose)</span>
+                </div>
+
+                <div class="grid-3">
+                    <div class="metric">
+                        <div class="metric-label">Wydatki — @_dashboard.PeriodLabel</div>
+                        <div class="metric-value">@Fmt.MoneyShort(tile.CurrentMonthTotal)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Wydatki — @_dashboard.Year</div>
+                        <div class="metric-value">@Fmt.MoneyShort(tile.CurrentYearTotal)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Dokumentów</div>
+                        <div class="metric-value">@tile.InvoicesCount</div>
+                    </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="row-between small">
+                    <strong>Postęp remontu</strong>
+                    <span class="mono">
+                        @tile.ShoppingDoneCount / @tile.ShoppingItemsCount · @Fmt.Percent(tile.ShoppingProgressPercent)
+                    </span>
+                </div>
+                <div class="progress" style="margin-top:.35rem">
+                    <span style="@ProgressWidth(tile.ShoppingProgressPercent)"></span>
+                </div>
+
+                <div class="grid-3" style="margin-top:.8rem">
+                    <div class="metric">
+                        <div class="metric-label">Planowany budżet</div>
+                        <div class="metric-value">@Fmt.MoneyShort(tile.ShoppingPlannedBudget)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Wydane naprawdę</div>
+                        <div class="metric-value">@Fmt.MoneyShort(tile.ShoppingActualCost)</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Budżet − rzeczywistość</div>
+                        <div class="metric-value @(tile.ShoppingBudgetDifference < 0 ? "negative" : "positive")">
+                            @Fmt.MoneyShort(tile.ShoppingBudgetDifference)
+                        </div>
+                    </div>
+                </div>
+
+                @if (tile.TotalWallsAndCeilingM2 > 0)
+                {
+                    <p class="small muted" style="margin:.7rem 0 0">
+                        Do malowania (ściany + sufity): <strong>@Fmt.Area(tile.TotalWallsAndCeilingM2)</strong>
+                    </p>
+                }
+
+                <div class="btn-row" style="margin-top:.8rem">
+                    <a class="btn btn-sm" href="@($"faktury?mieszkanie={tile.PropertyId}")">Faktury</a>
+                    <a class="btn btn-sm" href="@($"zakupy?mieszkanie={tile.PropertyId}")">Zakupy</a>
+                    <a class="btn btn-sm" href="@($"raporty?mieszkanie={tile.PropertyId}")">Raport</a>
+                    <a class="btn btn-sm" href="@($"mieszkania/{tile.PropertyId}/rzut")">Rzut</a>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private DashboardDto? _dashboard;
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _dashboard = await Api.GetDashboardAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string ProgressWidth(decimal percent)
+    {
+        var clamped = Math.Clamp(percent, 0m, 100m);
+        return $"width:{clamped.ToString("0.#", CultureInfo.InvariantCulture)}%";
+    }
+}

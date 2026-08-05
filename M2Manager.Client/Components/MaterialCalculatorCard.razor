@@ -1,0 +1,247 @@
+@inject ApiClient Api
+@inject AppState State
+
+@* Kalkulator materiałów: powierzchnia × warstwy ÷ wydajność → gotowa pozycja na liście zakupów. *@
+
+<div class="card">
+    <div class="card-title">
+        <h2>Kalkulator materiałów</h2>
+        <span class="badge">farba · grunt · płytki</span>
+    </div>
+
+    <StatusMessage Error="@_error" />
+
+    <div class="filters">
+        <div>
+            <label for="mc-source">Powierzchnia</label>
+            <select id="mc-source" value="@_source" @onchange="OnSourceChanged">
+                <option value="walls">Ściany netto — całe mieszkanie</option>
+                <option value="ceilings">Sufity — całe mieszkanie</option>
+                <option value="both">Ściany + sufity — całe mieszkanie</option>
+                <option value="floors">Podłogi — całe mieszkanie</option>
+                @foreach (var room in Areas.Rooms)
+                {
+                    <option value="@($"room-walls-{room.RoomId}")">Ściany — @room.RoomName</option>
+                    <option value="@($"room-floor-{room.RoomId}")">Podłoga — @room.RoomName</option>
+                }
+                <option value="custom">Wpisz ręcznie</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="mc-area">Powierzchnia (m²)</label>
+            <input id="mc-area" type="number" step="0.01" value="@_input.AreaM2" @onchange="OnAreaChanged" />
+        </div>
+
+        <div>
+            <label for="mc-coats">Warstwy</label>
+            <input id="mc-coats" type="number" min="1" value="@_input.Coats" @onchange="OnCoatsChanged" />
+        </div>
+
+        <div>
+            <label for="mc-coverage">Wydajność (m² / jednostkę)</label>
+            <input id="mc-coverage" type="number" step="0.01" value="@_input.CoveragePerUnit" @onchange="OnCoverageChanged" />
+        </div>
+
+        <div>
+            <label for="mc-unit">Jednostka</label>
+            <select id="mc-unit" value="@_input.Unit" @onchange="OnUnitChanged">
+                <option value="l">l</option>
+                <option value="opak.">opak.</option>
+                <option value="szt.">szt.</option>
+                <option value="m²">m²</option>
+                <option value="kg">kg</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="mc-reserve">Zapas (%)</label>
+            <input id="mc-reserve" type="number" step="1" value="@_input.ReservePercent" @onchange="OnReserveChanged" />
+        </div>
+    </div>
+
+    <label class="checkbox" style="margin-top:.6rem">
+        <input type="checkbox" checked="@_input.RoundUp" @onchange="OnRoundUpChanged" />
+        <span>Zaokrąglaj w górę do pełnych jednostek</span>
+    </label>
+
+    @{
+        var result = MaterialCalculator.Calculate(_input);
+    }
+
+    <div class="alert alert-info" style="margin-top:.4rem">
+        <strong>@result.Explanation</strong>
+    </div>
+
+    <div class="grid-2">
+        <div class="field">
+            <label for="mc-name">Nazwa pozycji na liście zakupów</label>
+            <input id="mc-name" type="text" value="@_itemName" @onchange="OnItemNameChanged" />
+        </div>
+        <div class="field">
+            <label for="mc-unitcost">Koszt jednostkowy (opcjonalnie)</label>
+            <input id="mc-unitcost" type="number" step="0.01" value="@_unitCost" @onchange="OnUnitCostChanged" />
+        </div>
+    </div>
+
+    <div class="btn-row">
+        <button class="btn btn-primary" disabled="@(_busy || result.Quantity <= 0)"
+                @onclick="() => AddToShoppingListAsync(result)">
+            @(_busy ? "Dodawanie…" : "➕ Dodaj do listy zakupów")
+        </button>
+        <a class="btn" href="@($"zakupy?mieszkanie={PropertyId}")">Otwórz listę zakupów</a>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int PropertyId { get; set; }
+    [Parameter, EditorRequired] public PropertyAreasDto Areas { get; set; } = default!;
+    [Parameter] public EventCallback<string> OnAddedToShoppingList { get; set; }
+
+    private readonly MaterialCalculationInput _input = new()
+    {
+        Coats = 2,
+        CoveragePerUnit = 10m,
+        Unit = "l",
+        RoundUp = true
+    };
+
+    private string _source = "walls";
+    private string _itemName = "Farba / grunt";
+    private decimal? _unitCost;
+    private int? _roomIdForItem;
+    private bool _busy;
+    private string? _error;
+
+    protected override void OnParametersSet() => ApplySource();
+
+    // ---------------------------------------------------------------- obsługa pól
+
+    private void OnSourceChanged(ChangeEventArgs e)
+    {
+        _source = e.Value?.ToString() ?? "walls";
+        ApplySource();
+    }
+
+    private void OnAreaChanged(ChangeEventArgs e)
+    {
+        _input.AreaM2 = ParseDecimal(e.Value);
+        _source = "custom"; // ręczna zmiana odłącza pole od wyliczeń
+    }
+
+    private void OnCoatsChanged(ChangeEventArgs e) =>
+        _input.Coats = Math.Max(1, (int)ParseDecimal(e.Value));
+
+    private void OnCoverageChanged(ChangeEventArgs e) =>
+        _input.CoveragePerUnit = ParseDecimal(e.Value);
+
+    private void OnUnitChanged(ChangeEventArgs e) =>
+        _input.Unit = string.IsNullOrWhiteSpace(e.Value?.ToString()) ? "szt." : e.Value!.ToString()!;
+
+    private void OnReserveChanged(ChangeEventArgs e) =>
+        _input.ReservePercent = ParseDecimal(e.Value);
+
+    private void OnRoundUpChanged(ChangeEventArgs e) =>
+        _input.RoundUp = e.Value is true;
+
+    private void OnItemNameChanged(ChangeEventArgs e) =>
+        _itemName = e.Value?.ToString() ?? string.Empty;
+
+    private void OnUnitCostChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString();
+        _unitCost = string.IsNullOrWhiteSpace(raw) ? null : ParseDecimal(raw);
+    }
+
+    // ---------------------------------------------------------------- źródło powierzchni
+
+    /// <summary>Przepisuje wybraną powierzchnię z wyliczeń do pola „Powierzchnia”.</summary>
+    private void ApplySource()
+    {
+        _roomIdForItem = null;
+
+        switch (_source)
+        {
+            case "walls":
+                _input.AreaM2 = Areas.Summary.TotalNetWallAreaM2;
+                break;
+            case "ceilings":
+                _input.AreaM2 = Areas.Summary.TotalCeilingAreaM2;
+                break;
+            case "both":
+                _input.AreaM2 = Areas.Summary.TotalWallsAndCeilingM2;
+                break;
+            case "floors":
+                _input.AreaM2 = Areas.Summary.TotalFloorAreaM2;
+                break;
+            case "custom":
+                break;
+            default:
+                ApplyRoomSource();
+                break;
+        }
+    }
+
+    private void ApplyRoomSource()
+    {
+        var parts = _source.Split('-');
+        if (parts.Length != 3 || !int.TryParse(parts[2], out var roomId))
+        {
+            return;
+        }
+
+        var room = Areas.Rooms.FirstOrDefault(r => r.RoomId == roomId);
+        if (room is null)
+        {
+            return;
+        }
+
+        _roomIdForItem = roomId;
+        _input.AreaM2 = parts[1] == "walls"
+            ? room.Area.NetWallAreaM2 ?? 0m
+            : room.Area.FloorAreaM2 ?? 0m;
+    }
+
+    // ---------------------------------------------------------------- zapis
+
+    private async Task AddToShoppingListAsync(MaterialCalculationResult result)
+    {
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            var categories = await State.GetShoppingCategoriesAsync();
+
+            var dto = new ShoppingItemUpsertDto
+            {
+                PropertyId = PropertyId,
+                RoomId = _roomIdForItem,
+                ShoppingCategoryId = categories.FirstOrDefault(c => c.Name == "Ściany")?.Id,
+                Name = string.IsNullOrWhiteSpace(_itemName) ? "Materiał z kalkulatora" : _itemName.Trim(),
+                CalculationNotes = result.Explanation,
+                Quantity = result.Quantity,
+                Unit = result.Unit,
+                UnitCost = _unitCost,
+                Status = ShoppingStatus.ToBuy,
+                Priority = ShoppingPriority.MustHave
+            };
+
+            await Api.CreateShoppingItemAsync(dto);
+            await OnAddedToShoppingList.InvokeAsync($"Dodano „{dto.Name}” do listy zakupów.");
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static decimal ParseDecimal(object? value) =>
+        decimal.TryParse(value?.ToString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : 0m;
+}

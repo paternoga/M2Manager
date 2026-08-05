@@ -1,0 +1,29 @@
+@using M2Manager.Client.Pages
+
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                <Authorizing>
+                    <div class="splash">
+                        <div class="spinner"></div>
+                        <p>Sprawdzanie sesji…</p>
+                    </div>
+                </Authorizing>
+                <NotAuthorized>
+                    <RedirectToLogin />
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+        </Found>
+        <NotFound>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <div class="card">
+                    <h1>Nie ma takiej strony</h1>
+                    <p class="muted">Sprawdź adres albo wróć na stronę główną.</p>
+                    <a class="btn btn-primary" href="">Strona główna</a>
+                </div>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
