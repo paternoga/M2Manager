@@ -342,32 +342,7 @@ public sealed class ShoppingImportService(AppDbContext db, ILogger<ShoppingImpor
     // ---------------------------------------------------------------- normalizacja
 
     /// <summary>„~Koszt szt.” → „kosztszt”. Pozwala dopasować nagłówki mimo literówek w interpunkcji.</summary>
-    internal static string Normalize(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        var decomposed = value.Trim().ToLowerInvariant().Normalize(NormalizationForm.FormD);
-        var sb = new StringBuilder(decomposed.Length);
-
-        foreach (var c in decomposed)
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark)
-            {
-                continue;
-            }
-
-            if (char.IsLetterOrDigit(c))
-            {
-                sb.Append(c);
-            }
-        }
-
-        // „ł” nie rozkłada się przez FormD — trzeba je zamienić ręcznie.
-        return sb.ToString().Replace('ł', 'l');
-    }
+    private static string Normalize(string? value) => TextNormalizer.Normalize(value);
 
     private static Dictionary<string, ShoppingColumn> BuildHeaderMap()
     {

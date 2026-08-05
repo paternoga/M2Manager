@@ -425,6 +425,10 @@ public static class InvoiceEndpoints
         return query;
     }
 
+    /// <summary>
+    /// Dopasowanie kategorii podpowiedzianej przez AI. Porównujemy po normalizacji, bo modele
+    /// bywają niekonsekwentne z polskimi znakami — potrafią zwrócić „Wyposazenie” zamiast „Wyposażenie”.
+    /// </summary>
     private static async Task<int?> MatchCategoryIdAsync(AppDbContext db, string? suggested, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(suggested))
@@ -432,12 +436,20 @@ public static class InvoiceEndpoints
             return null;
         }
 
-        var normalized = suggested.Trim();
+        var normalized = TextNormalizer.Normalize(suggested);
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
 
-        return await db.ExpenseCategories
-            .Where(c => c.Name.ToLower() == normalized.ToLower())
+        var categories = await db.ExpenseCategories
+            .Select(c => new { c.Id, c.Name })
+            .ToListAsync(ct);
+
+        return categories
+            .Where(c => TextNormalizer.Normalize(c.Name) == normalized)
             .Select(c => (int?)c.Id)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefault();
     }
 
     private static int? ParseInt(string? value) =>

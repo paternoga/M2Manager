@@ -109,13 +109,10 @@ public sealed class GeminiOcrService(
             // Odczyt faktury ma być powtarzalny, nie kreatywny.
             ["temperature"] = 0,
             ["maxOutputTokens"] = _options.MaxOutputTokens,
+
+            // Wymusza czysty JSON — model nie owija odpowiedzi w blok markdown.
             ["responseMimeType"] = "application/json"
         };
-
-        if (_options.ThinkingBudget is { } budget)
-        {
-            generationConfig["thinkingConfig"] = new Dictionary<string, object> { ["thinkingBudget"] = budget };
-        }
 
         return new Dictionary<string, object>
         {

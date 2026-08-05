@@ -166,7 +166,24 @@ public class ShoppingImportParsingTests
     [InlineData("  L.p  ", "lp")]
     public void Normalize_StripsDiacriticsAndPunctuation(string raw, string expected)
     {
-        Assert.Equal(expected, ShoppingImportService.Normalize(raw));
+        Assert.Equal(expected, TextNormalizer.Normalize(raw));
+    }
+
+    /// <summary>Modele potrafią gubić polskie znaki — dopasowanie kategorii musi to znieść.</summary>
+    [Theory]
+    [InlineData("Wyposażenie", "Wyposazenie")]
+    [InlineData("Wyposażenie", "wyposażenie")]
+    [InlineData("Remont i materiały", "Remont i materialy")]
+    [InlineData("Media (prąd, gaz, woda)", "Media (prad, gaz, woda)")]
+    public void Normalize_MakesCategoryNamesComparable(string fromDatabase, string fromModel)
+    {
+        Assert.Equal(TextNormalizer.Normalize(fromDatabase), TextNormalizer.Normalize(fromModel));
+    }
+
+    [Fact]
+    public void Normalize_DifferentCategories_StayDifferent()
+    {
+        Assert.NotEqual(TextNormalizer.Normalize("Wyposażenie"), TextNormalizer.Normalize("Ubezpieczenie"));
     }
 
     [Theory]

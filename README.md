@@ -1,4 +1,4 @@
-# M2Manager
+﻿# M2Manager
 
 Aplikacja webowa (PWA) do zarządzania dwoma mieszkaniami: faktury i wydatki, powierzchnie
 pomieszczeń z edytorem rzutu oraz lista rzeczy do zakupu. Jedno wspólne konto dla dwóch osób.
@@ -180,9 +180,9 @@ DROP TABLE IF EXISTS "ShoppingItems", "RoomOpenings", "Invoices", "Rooms",
 
 1. Wejdź na <https://aistudio.google.com/apikey> i zaloguj się kontem Google.
 2. **Create API key** → wybierz projekt (albo pozwól utworzyć nowy) i skopiuj klucz (`AIza...`).
-3. Ustaw `Gemini__ApiKey`. Model zostaw domyślny (`gemini-2.5-flash`) —
+3. Ustaw `Gemini__ApiKey`. Model zostaw domyślny (`gemini-3.6-flash`) —
    jest szybki, tani i dobrze radzi sobie z polskimi paragonami.
-   Przy wyjątkowo słabych zdjęciach możesz przełączyć się na `gemini-2.5-pro`.
+   Przy wyjątkowo słabych zdjęciach możesz przełączyć się na `gemini-3.6-pro`.
 
 Aplikacja wymusza `responseMimeType: application/json`, więc model odpowiada czystym JSON-em,
 a nie blokiem markdown — i tak jednak przepuszczamy odpowiedź przez tolerancyjny parser.

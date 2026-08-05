@@ -59,20 +59,17 @@ public sealed class GeminiOptions
     /// <summary>Klucz z aistudio.google.com/apikey.</summary>
     public string? ApiKey { get; set; }
 
-    /// <summary>Model z obsługą obrazu. Flash jest tani, szybki i w zupełności wystarcza do paragonów.</summary>
-    public string Model { get; set; } = "gemini-2.5-flash";
+    /// <summary>
+    /// Model z obsługą obrazu. Flash jest tani, szybki i w zupełności wystarcza do paragonów.
+    /// Uwaga: starsze modele (np. gemini-2.5-flash) Google wycofuje dla nowych kont —
+    /// widnieją wtedy na liście `/models`, ale `generateContent` zwraca 404.
+    /// </summary>
+    public string Model { get; set; } = "gemini-3.6-flash";
 
     public string BaseUrl { get; set; } = "https://generativelanguage.googleapis.com";
     public string ApiVersion { get; set; } = "v1beta";
     public int MaxOutputTokens { get; set; } = 1024;
     public int TimeoutSeconds { get; set; } = 90;
-
-    /// <summary>
-    /// Budżet „myślenia” dla modeli 2.5. Puste = zostawiamy domyślne zachowanie modelu,
-    /// 0 = wyłączamy rozumowanie (szybciej i taniej, a odczyt faktury tego nie potrzebuje).
-    /// Starsze modele (2.0) tego pola nie znają — wtedy zostaw puste.
-    /// </summary>
-    public int? ThinkingBudget { get; set; }
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 }

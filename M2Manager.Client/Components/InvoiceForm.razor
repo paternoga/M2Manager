@@ -14,7 +14,13 @@
 else if (Invoice.OcrStatus == OcrStatus.Failed)
 {
     <div class="alert alert-warn">
-        Automatyczny odczyt się nie udał. Zdjęcie jest zapisane — uzupełnij dane ręcznie.
+        <strong>Automatyczny odczyt się nie udał.</strong>
+        Zdjęcie jest zapisane — uzupełnij dane ręcznie.
+
+        @if (FailureReason is { Length: > 0 } reason)
+        {
+            <div class="small" style="margin-top:.4rem; opacity:.9">Powód: @reason</div>
+        }
     </div>
 }
 
@@ -199,4 +205,23 @@ else if (Invoice.OcrStatus == OcrStatus.Failed)
 
     private static int? ParseNullableInt(object? value) =>
         int.TryParse(value?.ToString(), out var parsed) ? parsed : null;
+
+    /// <summary>
+    /// Powód nieudanego odczytu zapisany przy fakturze. Bez tego użytkownik nie ma jak odróżnić
+    /// „nie ustawiłeś klucza” od „model nie dał rady odczytać zdjęcia”.
+    /// </summary>
+    private string? FailureReason
+    {
+        get
+        {
+            var raw = Invoice.OcrRawResponse?.Trim();
+
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            return raw.Length > 300 ? raw[..300] + "…" : raw;
+        }
+    }
 }
