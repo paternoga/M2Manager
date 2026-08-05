@@ -229,8 +229,11 @@ public sealed class ApiClient(HttpClient http)
 
             return await response.Content.ReadFromJsonAsync<T>(Json);
         }
-        catch (HttpRequestException)
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or NotSupportedException)
         {
+            // Gdy pod tym adresem nie stoi API (np. odpalono sam projekt Client albo proxy
+            // zwróciło stronę HTML), traktujemy to jak brak sesji — użytkownik zobaczy logowanie,
+            // a nie biały ekran z nieobsłużonym wyjątkiem.
             return default;
         }
     }
@@ -265,7 +268,18 @@ public sealed class ApiClient(HttpClient http)
             throw await BuildExceptionAsync(response);
         }
 
-        var value = await response.Content.ReadFromJsonAsync<T>(Json);
+        T? value;
+        try
+        {
+            value = await response.Content.ReadFromJsonAsync<T>(Json);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            // Najczęstsza przyczyna: pod tym adresem nie ma API i dostaliśmy stronę HTML.
+            throw new ApiException(
+                "Serwer zwrócił odpowiedź, która nie jest JSON-em. Sprawdź, czy aplikacja działa pod adresem API.",
+                response.StatusCode);
+        }
 
         return value ?? throw new ApiException("Serwer zwrócił pustą odpowiedź.", response.StatusCode);
     }

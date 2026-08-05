@@ -30,7 +30,7 @@ QuestPDF.Settings.License = LicenseType.Community;
 // ---------------------------------------------------------------- konfiguracja
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 builder.Services.Configure<R2Options>(builder.Configuration.GetSection(R2Options.SectionName));
-builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.SectionName));
+builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection(GeminiOptions.SectionName));
 builder.Services.Configure<UploadOptions>(builder.Configuration.GetSection(UploadOptions.SectionName));
 
 builder.Services.ConfigureHttpJsonOptions(options => AppJson.Configure(options.SerializerOptions));
@@ -100,19 +100,21 @@ else
     builder.Services.AddSingleton<IObjectStorage, LocalObjectStorage>();
 }
 
-var anthropicOptions = builder.Configuration.GetSection(AnthropicOptions.SectionName).Get<AnthropicOptions>()
-                       ?? new AnthropicOptions();
+var geminiOptions = builder.Configuration.GetSection(GeminiOptions.SectionName).Get<GeminiOptions>()
+                    ?? new GeminiOptions();
 
-if (anthropicOptions.IsConfigured)
+if (geminiOptions.IsConfigured)
 {
-    builder.Services.AddHttpClient<IOcrService, ClaudeOcrService>((serviceProvider, client) =>
+    builder.Services.AddHttpClient<IOcrService, GeminiOcrService>((serviceProvider, client) =>
     {
-        var options = serviceProvider.GetRequiredService<IOptions<AnthropicOptions>>().Value;
+        var options = serviceProvider.GetRequiredService<IOptions<GeminiOptions>>().Value;
 
-        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/'));
+        // Ukośnik na końcu jest istotny — bez niego względny adres nadpisałby ostatni segment ścieżki.
+        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
         client.Timeout = TimeSpan.FromSeconds(Math.Max(10, options.TimeoutSeconds));
-        client.DefaultRequestHeaders.Add("x-api-key", options.ApiKey);
-        client.DefaultRequestHeaders.Add("anthropic-version", options.ApiVersion);
+
+        // Klucz w nagłówku, nie w query stringu — inaczej wyciekłby do logów proxy.
+        client.DefaultRequestHeaders.Add("x-goog-api-key", options.ApiKey);
     });
 }
 else
@@ -140,9 +142,20 @@ if (builder.Configuration.GetValue("Database:AutoMigrate", true))
     await using var scope = app.Services.CreateAsyncScope();
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
+    // Migracje puszczamy po połączeniu bezpośrednim. Przez pooler Neona (PgBouncer w trybie
+    // transakcyjnym) transakcja DDL potrafi się rozerwać i zostawić bazę z połową tabel.
+    var migrationConnectionString = DatabaseConnection.ToDirectEndpoint(connectionString);
+
+    var migrationOptions = new DbContextOptionsBuilder<AppDbContext>()
+        .UseNpgsql(migrationConnectionString, npgsql => npgsql.EnableRetryOnFailure(
+            maxRetryCount: 3,
+            maxRetryDelay: TimeSpan.FromSeconds(5),
+            errorCodesToAdd: null))
+        .Options;
+
     try
     {
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await using var db = new AppDbContext(migrationOptions);
         await db.Database.MigrateAsync();
         await DbSeeder.SeedAsync(db);
         logger.LogInformation("Migracje i dane startowe gotowe.");

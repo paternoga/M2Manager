@@ -137,6 +137,57 @@ public class DatabaseConnectionTests
 
         Assert.Null(DatabaseConnection.Resolve(configuration));
     }
+
+    // ---------------------------------------------------------------- pooler → bezpośrednie
+
+    [Fact]
+    public void ToDirectEndpoint_StripsPoolerFromNeonHost()
+    {
+        const string pooled = "postgresql://u:p@ep-little-math-ask3or4d-pooler.c-4.eu-central-1.aws.neon.tech/neondb?sslmode=require";
+
+        var result = DatabaseConnection.ToDirectEndpoint(pooled);
+
+        Assert.Contains("Host=ep-little-math-ask3or4d.c-4.eu-central-1.aws.neon.tech", result);
+        Assert.DoesNotContain("-pooler", result);
+
+        // Reszta parametrów musi przetrwać podmianę hosta.
+        Assert.Contains("Database=neondb", result);
+        Assert.Contains("Username=u", result);
+        Assert.Contains("SSL Mode=Require", result);
+    }
+
+    [Fact]
+    public void ToDirectEndpoint_AcceptsKeyValueFormatToo()
+    {
+        const string pooled = "Host=ep-abc-pooler.eu-central-1.aws.neon.tech;Database=neondb;Username=u;Password=p";
+
+        var result = DatabaseConnection.ToDirectEndpoint(pooled);
+
+        Assert.Contains("Host=ep-abc.eu-central-1.aws.neon.tech", result);
+    }
+
+    [Fact]
+    public void ToDirectEndpoint_NonPooledNeonHost_IsLeftAlone()
+    {
+        const string direct = "Host=ep-abc.eu-central-1.aws.neon.tech;Database=neondb;Username=u;Password=p";
+
+        Assert.Contains("Host=ep-abc.eu-central-1.aws.neon.tech", DatabaseConnection.ToDirectEndpoint(direct));
+    }
+
+    [Fact]
+    public void ToDirectEndpoint_NonNeonHost_IsLeftAlone()
+    {
+        // „-pooler” u innego dostawcy może być normalną częścią nazwy hosta — nie ruszamy.
+        const string other = "Host=db-pooler.example.com;Database=app;Username=u;Password=p";
+
+        Assert.Contains("Host=db-pooler.example.com", DatabaseConnection.ToDirectEndpoint(other));
+    }
+
+    [Fact]
+    public void ToDirectEndpoint_EmptyInput_IsReturnedUnchanged()
+    {
+        Assert.Equal("", DatabaseConnection.ToDirectEndpoint(""));
+    }
 }
 
 public class ObjectKeyTests

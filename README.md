@@ -4,7 +4,7 @@ Aplikacja webowa (PWA) do zarządzania dwoma mieszkaniami: faktury i wydatki, po
 pomieszczeń z edytorem rzutu oraz lista rzeczy do zakupu. Jedno wspólne konto dla dwóch osób.
 
 **Stack:** ASP.NET Core Minimal API (.NET 10) + Blazor WebAssembly (ASP.NET Core Hosted) +
-PostgreSQL (Neon) + Cloudflare R2 + Claude API + QuestPDF + ClosedXML. Hosting: Render (Docker).
+PostgreSQL (Neon) + Cloudflare R2 + Gemini API + QuestPDF + ClosedXML. Hosting: Render (Docker).
 
 ---
 
@@ -15,7 +15,7 @@ PostgreSQL (Neon) + Cloudflare R2 + Claude API + QuestPDF + ClosedXML. Hosting: 
 3. [Uruchomienie lokalne](#uruchomienie-lokalne)
 4. [Krok 1 — darmowa baza na Neon](#krok-1--darmowa-baza-na-neon)
 5. [Krok 2 — bucket na Cloudflare R2](#krok-2--bucket-na-cloudflare-r2)
-6. [Krok 3 — klucz API Anthropic](#krok-3--klucz-api-anthropic)
+6. [Krok 3 — klucz API Gemini](#krok-3--klucz-api-gemini)
 7. [Krok 4 — deploy na Render](#krok-4--deploy-na-render)
 8. [Krok 5 — dodanie do ekranu początkowego na iPhone](#krok-5--dodanie-do-ekranu-początkowego-na-iphone)
 9. [Koszty](#koszty)
@@ -31,7 +31,7 @@ PostgreSQL (Neon) + Cloudflare R2 + Claude API + QuestPDF + ClosedXML. Hosting: 
 
 **Moduł 1 — faktury i wydatki**
 - Zdjęcie faktury prosto z aparatu telefonu (`capture="environment"`).
-- Automatyczny odczyt danych przez Claude (sprzedawca, kwota brutto, data, sugerowana kategoria)
+- Automatyczny odczyt danych przez Gemini (sprzedawca, kwota brutto, data, sugerowana kategoria)
   — zawsze jako **propozycja do potwierdzenia**, nigdy jako prawda ostateczna.
 - Zdjęcia w prywatnym buckecie R2, podgląd przez presigned URL o ograniczonej ważności.
 - Filtry (mieszkanie, pomieszczenie, kategoria, zakres dat), edycja, usuwanie.
@@ -117,7 +117,7 @@ wykonują się automatycznie przy pierwszym starcie.
 
 > Bez skonfigurowanego R2 zdjęcia zapisują się na dysk lokalny (`App_Data/uploads`) —
 > wygodne przy testach, nieprzydatne na Renderze, gdzie dysk kontenera znika po restarcie.
-> Bez klucza Anthropic upload działa, tylko bez automatycznego odczytu.
+> Bez klucza Gemini upload działa, tylko bez automatycznego odczytu.
 
 ---
 
@@ -139,6 +139,25 @@ wykonują się automatycznie przy pierwszym starcie.
 > Darmowy plan Neon usypia bazę po okresie bezczynności. Pierwsze zapytanie po przerwie
 > może trwać kilka sekund — połączenie ma włączone ponawianie (`EnableRetryOnFailure`).
 
+### Pooler a migracje
+
+Neon domyślnie daje **pooled endpoint** (w nazwie hosta jest `-pooler`). Do zwykłych zapytań
+jest w porządku, ale migracji przez niego puszczać nie wolno: PgBouncer działa w trybie
+transakcyjnym, gubi stan sesji i potrafi rozerwać transakcję DDL w połowie — zostaje wtedy
+baza z częścią tabel i migracja, której nie da się powtórzyć.
+
+Aplikacja załatwia to sama: przy starcie i w narzędziach `dotnet ef` connection string jest
+zamieniany na bezpośredni (`ToDirectEndpoint` usuwa `-pooler` z nazwy hosta), a zwykłe
+zapytania lecą tym stringiem, który podałeś. Możesz więc wkleić dowolny wariant.
+
+Gdyby jednak migracja kiedyś urwała się w połowie, wyczyść tabele w **SQL Editor** w panelu Neon:
+
+```sql
+DROP TABLE IF EXISTS "ShoppingItems", "RoomOpenings", "Invoices", "Rooms",
+                     "ShoppingCategories", "ExpenseCategories", "Properties",
+                     "__EFMigrationsHistory" CASCADE;
+```
+
 ---
 
 ## Krok 2 — bucket na Cloudflare R2
@@ -157,14 +176,23 @@ wykonują się automatycznie przy pierwszym starcie.
 
 ---
 
-## Krok 3 — klucz API Anthropic
+## Krok 3 — klucz API Gemini
 
-1. Wejdź na <https://console.anthropic.com> i załóż konto.
-2. **Settings → API Keys → Create Key**, skopiuj klucz (`sk-ant-...`).
-3. Doładuj konto — odczyt faktur jest rozliczany za zużycie i przy kilkudziesięciu
-   dokumentach miesięcznie to koszt rzędu pojedynczych złotówek.
-4. Ustaw `Anthropic__ApiKey`. Model zostaw domyślny (`claude-sonnet-5`) —
-   ma obsługę wizji i dobrze radzi sobie z polskimi paragonami.
+1. Wejdź na <https://aistudio.google.com/apikey> i zaloguj się kontem Google.
+2. **Create API key** → wybierz projekt (albo pozwól utworzyć nowy) i skopiuj klucz (`AIza...`).
+3. Ustaw `Gemini__ApiKey`. Model zostaw domyślny (`gemini-2.5-flash`) —
+   jest szybki, tani i dobrze radzi sobie z polskimi paragonami.
+   Przy wyjątkowo słabych zdjęciach możesz przełączyć się na `gemini-2.5-pro`.
+
+Aplikacja wymusza `responseMimeType: application/json`, więc model odpowiada czystym JSON-em,
+a nie blokiem markdown — i tak jednak przepuszczamy odpowiedź przez tolerancyjny parser.
+
+> **Darmowy tier** Google AI Studio ma dzienne limity zapytań, które przy kilkudziesięciu
+> fakturach miesięcznie w zupełności wystarczają. Płatny tier włącza się dopiero po podpięciu
+> billingu w Google Cloud.
+
+> **Zdjęcia z iPhone'a**: Gemini przyjmuje HEIC i HEIF, więc nie musisz nic przestawiać
+> w ustawieniach aparatu. Obsługiwane formaty: JPEG, PNG, WebP, HEIC, HEIF i PDF.
 
 ---
 
@@ -188,7 +216,7 @@ wykonują się automatycznie przy pierwszym starcie.
    | `R2__AccessKeyId` | Access Key ID tokenu R2 |
    | `R2__SecretAccessKey` | Secret Access Key tokenu R2 |
    | `R2__BucketName` | np. `m2manager-faktury` |
-   | `Anthropic__ApiKey` | klucz `sk-ant-...` |
+   | `Gemini__ApiKey` | klucz `AIza...` |
 
    Portu **nie ustawiasz** — Render podaje go w zmiennej `PORT`, a aplikacja sama go odczytuje.
 
@@ -224,7 +252,7 @@ Przycisk „Zrób zdjęcie aparatem” na stronie dodawania faktury otwiera od r
 | Cloudflare R2 | Free (10 GB) | 0 zł |
 | Render | Free | 0 zł (usługa zasypia) |
 | Render | Starter | ok. 7 USD/mies. (opcjonalnie) |
-| Anthropic API | pay-as-you-go | kilka groszy za odczytaną fakturę |
+| Gemini API | Free tier | 0 zł w ramach dziennych limitów |
 
 Start kosztuje **0 zł**. Jedyny realny wydatek to odczyt faktur przez AI,
 a aplikacja działa też bez niego (dane wpisuje się wtedy ręcznie).
@@ -314,8 +342,9 @@ Nie ustawiono `ConnectionStrings__DefaultConnection` ani `DATABASE_URL`.
 Migracje nie przeszły — zajrzyj do logów. Najczęściej zły connection string albo uśpiona baza Neon.
 
 **Odczyt AI zawsze kończy się „Odczyt nieudany”**
-Brak `Anthropic__ApiKey` albo zdjęcie jest w formacie HEIC. Messages API przyjmuje JPEG, PNG, GIF,
-WebP i PDF — w ustawieniach iPhone'a wybierz *Aparat → Formaty → Najbardziej zgodny*.
+Brak `Gemini__ApiKey`, wyczerpany dzienny limit darmowego tieru albo nieobsługiwany format pliku.
+Gemini przyjmuje JPEG, PNG, WebP, HEIC, HEIF i PDF. Dokładny powód zapisuje się w polu
+`OcrRawResponse` przy fakturze i trafia do logów aplikacji.
 
 **Zdjęcia znikają po restarcie na Renderze**
 R2 nie jest skonfigurowane i aplikacja zapisuje pliki na ulotnym dysku kontenera.

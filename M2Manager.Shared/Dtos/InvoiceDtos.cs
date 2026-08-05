@@ -53,7 +53,7 @@ public sealed class InvoiceUpsertDto
     public bool MarkConfirmed { get; set; } = true;
 }
 
-/// <summary>Wynik odczytu faktury przez Claude — propozycja do korekty, nie prawda ostateczna.</summary>
+/// <summary>Wynik odczytu faktury przez AI — propozycja do korekty, nie prawda ostateczna.</summary>
 public sealed class OcrExtractionResult
 {
     public bool Success { get; set; }

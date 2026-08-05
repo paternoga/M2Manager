@@ -14,7 +14,7 @@ public interface IOcrService
         CancellationToken ct = default);
 }
 
-/// <summary>Zaślepka używana, gdy nie ustawiono ANTHROPIC_API_KEY — upload nadal działa, tylko bez podpowiedzi.</summary>
+/// <summary>Zaślepka używana, gdy nie ustawiono klucza Gemini — upload nadal działa, tylko bez podpowiedzi.</summary>
 public sealed class DisabledOcrService : IOcrService
 {
     public bool IsEnabled => false;
@@ -25,5 +25,5 @@ public sealed class DisabledOcrService : IOcrService
         IReadOnlyCollection<string> availableCategories,
         CancellationToken ct = default) =>
         Task.FromResult(OcrExtractionResult.Failed(
-            "Automatyczny odczyt jest wyłączony (brak ANTHROPIC_API_KEY). Uzupełnij dane ręcznie."));
+            "Automatyczny odczyt jest wyłączony (brak Gemini__ApiKey). Uzupełnij dane ręcznie."));
 }

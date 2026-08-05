@@ -16,14 +16,16 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
             .SetBasePath(Directory.GetCurrentDirectory())
             .AddJsonFile("appsettings.json", optional: true)
             .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddUserSecrets<AppDbContextFactory>(optional: true)
             .AddEnvironmentVariables()
             .Build();
 
         var connectionString = DatabaseConnection.Resolve(configuration)
                                ?? "Host=localhost;Port=5432;Database=m2manager;Username=postgres;Password=postgres";
 
+        // Tak samo jak przy starcie aplikacji: narzędzia EF gadają z bazą bezpośrednio, nie przez pooler.
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(connectionString)
+            .UseNpgsql(DatabaseConnection.ToDirectEndpoint(connectionString))
             .Options;
 
         return new AppDbContext(options);

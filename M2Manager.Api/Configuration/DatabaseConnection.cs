@@ -20,6 +20,37 @@ public static class DatabaseConnection
         return string.IsNullOrWhiteSpace(raw) ? null : Normalize(raw);
     }
 
+    /// <summary>
+    /// Zamienia pooled endpoint Neona na bezpośredni (usuwa „-pooler” z nazwy hosta).
+    ///
+    /// Neon wprost zaleca połączenie bezpośrednie do migracji: pooler działa w trybie
+    /// transakcyjnym (PgBouncer), który gubi stan sesji i potrafi rozerwać transakcję DDL
+    /// w połowie — wtedy część tabel powstaje, a migracja i tak kończy się błędem.
+    /// Dla zwykłych zapytań pooler jest w porządku, więc podmieniamy go tylko na czas migracji.
+    ///
+    /// Dla hostów spoza Neona zwraca wejście bez zmian.
+    /// </summary>
+    public static string ToDirectEndpoint(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return connectionString;
+        }
+
+        var builder = new NpgsqlConnectionStringBuilder(Normalize(connectionString));
+        var host = builder.Host;
+
+        if (string.IsNullOrWhiteSpace(host) ||
+            !host.EndsWith(".neon.tech", StringComparison.OrdinalIgnoreCase) ||
+            !host.Contains("-pooler.", StringComparison.OrdinalIgnoreCase))
+        {
+            return builder.ConnectionString;
+        }
+
+        builder.Host = host.Replace("-pooler.", ".", StringComparison.OrdinalIgnoreCase);
+        return builder.ConnectionString;
+    }
+
     public static string Normalize(string raw)
     {
         var value = raw.Trim();

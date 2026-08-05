@@ -14,8 +14,8 @@
             <span>M2Manager</span>
         </div>
 
-        <h1 style="font-size:1.15rem">Zaloguj się</h1>
-        <p class="muted small">Wspólne konto dla obu mieszkań.</p>
+        <h1>Zaloguj się</h1>
+        <p class="login-sub">Wspólne konto dla obu mieszkań.</p>
 
         <StatusMessage Error="@_error" />
 
@@ -24,18 +24,22 @@
 
             <div class="field">
                 <label for="login-user">Login</label>
-                <InputText id="login-user" class="" @bind-Value="_model.Username" autocomplete="username" />
+                <InputText id="login-user" type="text" @bind-Value="_model.Username"
+                           autocomplete="username" autocapitalize="none" spellcheck="false" />
             </div>
 
             <div class="field">
                 <label for="login-pass">Hasło</label>
-                <InputText id="login-pass" type="password" @bind-Value="_model.Password" autocomplete="current-password" />
+                <InputText id="login-pass" type="password" @bind-Value="_model.Password"
+                           autocomplete="current-password" />
             </div>
 
             <button class="btn btn-primary btn-block" type="submit" disabled="@_busy">
                 @(_busy ? "Logowanie…" : "Zaloguj")
             </button>
         </EditForm>
+
+        <p class="login-hint">Sesja trzyma się 30 dni — nie musisz logować się przy każdym wejściu.</p>
     </div>
 </div>
 

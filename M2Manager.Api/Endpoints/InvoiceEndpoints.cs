@@ -80,7 +80,7 @@ public static class InvoiceEndpoints
                     roomId = null;
                 }
 
-                // Bajty trzymamy w pamięci — potrzebne i do R2, i do zapytania do Claude.
+                // Bajty trzymamy w pamięci — potrzebne i do R2, i do zapytania do modelu AI.
                 byte[] bytes;
                 await using (var input = file.OpenReadStream())
                 await using (var buffer = new MemoryStream())

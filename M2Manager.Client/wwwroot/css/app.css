@@ -7,6 +7,12 @@
     --accent: #1f4e79;
     --accent-strong: #163a5a;
     --accent-soft: #e8f0f8;
+
+    /* Wypełnienie przycisków trzymamy osobno od koloru tekstu/obramowań —
+       w trybie ciemnym jasny akcent z białym napisem miał fatalny kontrast. */
+    --accent-fill: #1f4e79;
+    --accent-fill-hover: #163a5a;
+    --on-accent: #ffffff;
     --bg: #f5f6f8;
     --surface: #ffffff;
     --surface-alt: #f8f9fb;
@@ -27,9 +33,12 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --accent: #6aa9e0;
-        --accent-strong: #8cc0ee;
-        --accent-soft: #1a2836;
+        --accent: #7db4e8;
+        --accent-strong: #9ccbf4;
+        --accent-soft: #1b2b3b;
+        --accent-fill: #2f6fad;
+        --accent-fill-hover: #3b82c4;
+        --on-accent: #ffffff;
         --bg: #12161c;
         --surface: #1a1f27;
         --surface-alt: #20262f;
@@ -131,8 +140,8 @@ a:hover { text-decoration: underline; }
     width: 30px;
     height: 30px;
     border-radius: 8px;
-    background: var(--accent);
-    color: #fff;
+    background: var(--accent-fill);
+    color: var(--on-accent);
     font-size: .78rem;
     font-weight: 700;
     letter-spacing: -.03em;
@@ -342,27 +351,40 @@ label, .field-label {
     margin-bottom: .2rem;
 }
 
-input[type=text], input[type=password], input[type=number], input[type=date],
-input[type=url], input[type=search], select, textarea {
+/*
+   Selektor „przez wykluczenie”, nie przez wyliczenie typów.
+   Blazorowy <InputText> renderuje <input> BEZ atrybutu type, więc `input[type=text]`
+   go nie łapał i pola tekstowe zostawały nieostylowane.
+*/
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]),
+select, textarea {
     width: 100%;
-    padding: .5rem .6rem;
+    padding: .55rem .7rem;
     font: inherit;
     font-size: 16px; /* poniżej 16px Safari na iOS przybliża widok przy fokusie */
     color: var(--text);
-    background: var(--surface);
+    background: var(--surface-alt);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+}
+
+input:not([type=checkbox]):not([type=radio]):not([type=file])::placeholder,
+textarea::placeholder {
+    color: var(--text-muted);
+    opacity: .75;
 }
 
 @media (min-width: 900px) {
-    input[type=text], input[type=password], input[type=number], input[type=date],
-    input[type=url], input[type=search], select, textarea { font-size: .92rem; }
+    input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=submit]):not([type=button]),
+    select, textarea { font-size: .92rem; }
 }
 
 input:focus, select:focus, textarea:focus {
-    outline: 2px solid var(--accent);
-    outline-offset: -1px;
+    outline: none;
     border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 textarea { min-height: 78px; resize: vertical; }
@@ -415,12 +437,21 @@ textarea { min-height: 78px; resize: vertical; }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 
 .btn-primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
+    color: var(--on-accent);
 }
 
-.btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+.btn-primary:hover {
+    background: var(--accent-fill-hover);
+    border-color: var(--accent-fill-hover);
+    color: var(--on-accent);
+}
+
+.btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+}
 
 .btn-danger {
     background: var(--danger-soft);
@@ -625,9 +656,9 @@ table.data tr.total-row td {
 }
 
 .chip.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    background: var(--accent-fill);
+    border-color: var(--accent-fill);
+    color: var(--on-accent);
 }
 
 /* ---------------------------------------------------------------- ekran logowania ---- */
@@ -638,20 +669,70 @@ table.data tr.total-row td {
     display: grid;
     place-items: center;
     padding: 1.25rem;
-    background: var(--bg);
+    background:
+        radial-gradient(1000px 520px at 50% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+        var(--bg);
 }
 
 .login-box {
     width: 100%;
-    max-width: 380px;
+    max-width: 400px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 1.5rem;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 12px 32px rgba(16, 24, 40, .14);
+    padding: 2rem 1.75rem;
 }
 
-.login-box .brand { justify-content: center; padding-bottom: 1.25rem; }
+.login-box .brand {
+    justify-content: center;
+    padding: 0 0 1.5rem;
+    font-size: 1.2rem;
+}
+
+.login-box .brand-mark {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    font-size: .95rem;
+}
+
+.login-box h1 {
+    font-size: 1.35rem;
+    margin-bottom: .15rem;
+}
+
+.login-box .login-sub {
+    color: var(--text-muted);
+    font-size: .88rem;
+    margin-bottom: 1.35rem;
+}
+
+.login-box .field { margin-bottom: .95rem; }
+
+.login-box label {
+    font-size: .8rem;
+    letter-spacing: .01em;
+    margin-bottom: .3rem;
+}
+
+.login-box input { padding: .65rem .75rem; }
+
+.login-box .btn {
+    margin-top: .35rem;
+    padding: .7rem 1rem;
+    font-size: .95rem;
+    border-radius: 10px;
+}
+
+.login-hint {
+    margin: 1.1rem 0 0;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: .78rem;
+    color: var(--text-muted);
+    text-align: center;
+}
 
 /* ---------------------------------------------------------------- ładowanie ---- */
 
