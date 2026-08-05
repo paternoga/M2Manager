@@ -1,4 +1,4 @@
-@page "/faktury"
+﻿@page "/faktury"
 @attribute [Authorize]
 @inject ApiClient Api
 @inject AppState State
@@ -11,7 +11,7 @@
         <h1>Faktury i paragony</h1>
         <p class="muted small">@_result.TotalCount dokument(ów) · suma na stronie: @Fmt.MoneyShort(PageTotal)</p>
     </div>
-    <a class="btn btn-primary" href="faktury/dodaj">📷 Dodaj fakturę</a>
+    <a class="btn btn-primary" href="faktury/dodaj"><i class="bi bi-camera"></i> Dodaj fakturę</a>
 </div>
 
 <StatusMessage Error="@_error" Success="@_success" />
@@ -79,7 +79,7 @@
 else if (_result.Items.Count == 0)
 {
     <div class="card empty-state">
-        <span class="emoji">🧾</span>
+        <span class="emoji"><i class="bi bi-receipt"></i></span>
         <p>Brak faktur dla wybranych filtrów.</p>
         <a class="btn btn-primary" href="faktury/dodaj">Dodaj pierwszą fakturę</a>
     </div>

@@ -1,4 +1,4 @@
-@inject ApiClient Api
+﻿@inject ApiClient Api
 @inject AppState State
 
 @* Pozycje odczytane z faktury — każdą można poprawić i przenieść na listę zakupów jako osobny wiersz. *@
@@ -8,7 +8,9 @@
     <div class="card">
         <div class="card-title">
             <h2>Pozycje z faktury</h2>
-            <button class="btn btn-sm" @onclick="AddEmptyRow">+ Dodaj pozycję ręcznie</button>
+            <button class="btn btn-sm" @onclick="AddEmptyRow">
+                <i class="bi bi-plus-lg"></i> Dodaj pozycję ręcznie
+            </button>
         </div>
         <p class="small muted" style="margin:0">
             @(Invoice.OcrStatus == OcrStatus.Extracted
@@ -96,7 +98,7 @@ else
                         </td>
                         <td>
                             <button class="btn btn-sm btn-danger btn-icon" title="Usuń wiersz"
-                                    @onclick="() => RemoveRow(item)">✕</button>
+                                    @onclick="() => RemoveRow(item)"><i class="bi bi-x-lg"></i></button>
                         </td>
                     </tr>
                 }
@@ -146,9 +148,17 @@ else
 
         <div class="btn-row">
             <button class="btn btn-primary" disabled="@(_busy || _selected.Count == 0)" @onclick="AddSelectedAsync">
-                @(_busy ? "Dodawanie…" : $"➕ Dodaj {_selected.Count} poz. do listy zakupów")
+                @if (_busy)
+                {
+                    <text>Dodawanie…</text>
+                }
+                else
+                {
+                    <i class="bi bi-plus-lg"></i>
+                    <text>Dodaj @_selected.Count poz. do listy zakupów</text>
+                }
             </button>
-            <button class="btn" @onclick="AddEmptyRow">+ Dodaj pozycję ręcznie</button>
+            <button class="btn" @onclick="AddEmptyRow"><i class="bi bi-plus-lg"></i> Dodaj pozycję ręcznie</button>
             <a class="btn" href="@($"zakupy?mieszkanie={Invoice.PropertyId}")">Otwórz listę zakupów</a>
         </div>
     </div>

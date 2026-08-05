@@ -1,4 +1,4 @@
-@inherits LayoutComponentBase
+﻿@inherits LayoutComponentBase
 @inject NavigationManager Navigation
 @inject ApiClient Api
 @inject AppState State
@@ -30,7 +30,7 @@
                         <span>M2Manager</span>
                     </a>
                     <div class="btn-row">
-                        <a class="btn btn-sm" href="ustawienia" title="Słowniki">⚙️</a>
+                        <a class="btn btn-sm" href="ustawienia" title="Słowniki"><i class="bi bi-gear"></i></a>
                         <button class="btn btn-sm" @onclick="LogoutAsync">Wyloguj</button>
                     </div>
                 </header>

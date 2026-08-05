@@ -1,4 +1,4 @@
-@page "/raporty"
+﻿@page "/raporty"
 @attribute [Authorize]
 @inject ApiClient Api
 @inject AppState State
@@ -50,8 +50,8 @@
         <div>
             <label class="field-label">Eksport</label>
             <div class="btn-row">
-                <a class="btn" href="@ExportUrl("pdf")" target="_blank" rel="noopener">⬇ PDF</a>
-                <a class="btn" href="@ExportUrl("excel")" target="_blank" rel="noopener">⬇ Excel</a>
+                <a class="btn" href="@ExportUrl("pdf")" target="_blank" rel="noopener"><i class="bi bi-download"></i> PDF</a>
+                <a class="btn" href="@ExportUrl("excel")" target="_blank" rel="noopener"><i class="bi bi-download"></i> Excel</a>
             </div>
         </div>
     </div>
@@ -97,7 +97,7 @@ else if (_summary is not null)
     @if (_summary.InvoicesCount == 0)
     {
         <div class="card empty-state">
-            <span class="emoji">📊</span>
+            <span class="emoji"><i class="bi bi-bar-chart"></i></span>
             <p>Brak dokumentów w wybranym okresie.</p>
         </div>
     }

@@ -1,4 +1,4 @@
-@inject IJSRuntime Js
+﻿@inject IJSRuntime Js
 
 @* Edytowalna tabela słownika (nazwa + kolejność). Używana dla kategorii faktur i kategorii zakupów. *@
 
@@ -39,7 +39,7 @@
                     </td>
                     <td>
                         <button class="btn btn-sm btn-danger btn-icon" title="Usuń"
-                                @onclick="() => DeleteAsync(item)">✕</button>
+                                @onclick="() => DeleteAsync(item)"><i class="bi bi-x-lg"></i></button>
                     </td>
                 </tr>
             }
@@ -52,7 +52,7 @@
                            @onkeydown="OnNewKeyDown" />
                 </td>
                 <td colspan="2">
-                    <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="CreateAsync">+ Dodaj</button>
+                    <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="CreateAsync"><i class="bi bi-plus-lg"></i> Dodaj</button>
                 </td>
             </tr>
             </tfoot>

@@ -208,6 +208,15 @@ a:hover { text-decoration: underline; }
 
 .nav-icon { font-size: 1.05rem; width: 1.3rem; text-align: center; }
 
+/* Ikony Bootstrap renderują się jako font — lekkie podniesienie wyrównuje je z tekstem. */
+.bi { vertical-align: -.125em; line-height: 1; }
+
+/* W przyciskach ikonowych (krzyżyk, lupa) nie chcemy dodatkowego odstępu po ikonie. */
+.btn-icon .bi { vertical-align: -.05em; }
+
+/* Duża ikona w pustym stanie — wcześniej rozmiar dawało emoji. */
+.empty-state .emoji .bi { font-size: 2rem; color: var(--text-muted); }
+
 .bottom-nav {
     position: fixed;
     left: 0;

@@ -1,4 +1,4 @@
-@page "/ustawienia"
+﻿@page "/ustawienia"
 @attribute [Authorize]
 @inject ApiClient Api
 @inject AppState State
@@ -78,7 +78,7 @@ else
                         <td><input type="number" step="10" value="@shop.SortOrder" @onchange="e => SaveShopAsync(shop, order: e.Value)" /></td>
                         <td>
                             <button class="btn btn-sm btn-danger btn-icon" title="Usuń"
-                                    @onclick="() => DeleteShopAsync(shop)">✕</button>
+                                    @onclick="() => DeleteShopAsync(shop)"><i class="bi bi-x-lg"></i></button>
                         </td>
                     </tr>
                 }
@@ -90,7 +90,7 @@ else
                     <td><input type="url" value="@_newShopUrl" placeholder="https://…"
                                @onchange="e => _newShopUrl = e.Value?.ToString() ?? string.Empty" /></td>
                     <td colspan="3">
-                        <button class="btn btn-sm btn-primary" disabled="@_shopBusy" @onclick="CreateShopAsync">+ Dodaj sklep</button>
+                        <button class="btn btn-sm btn-primary" disabled="@_shopBusy" @onclick="CreateShopAsync"><i class="bi bi-plus-lg"></i> Dodaj sklep</button>
                     </td>
                 </tr>
                 </tfoot>

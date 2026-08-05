@@ -1,4 +1,4 @@
-@page "/mieszkania/{PropertyId:int}/rzut"
+﻿@page "/mieszkania/{PropertyId:int}/rzut"
 @attribute [Authorize]
 @implements IDisposable
 @inject ApiClient Api
@@ -33,9 +33,9 @@ else
         <div>
             <div class="plan-canvas">
                 <div class="plan-toolbar">
-                    <button class="btn btn-sm" @onclick="AddRoomAsync">+ Pomieszczenie</button>
-                    <button class="btn btn-sm" @onclick="() => Zoom(1.25)">🔍+</button>
-                    <button class="btn btn-sm" @onclick="() => Zoom(0.8)">🔍−</button>
+                    <button class="btn btn-sm" @onclick="AddRoomAsync"><i class="bi bi-plus-lg"></i> Pomieszczenie</button>
+                    <button class="btn btn-sm" @onclick="() => Zoom(1.25)"><i class="bi bi-zoom-in"></i></button>
+                    <button class="btn btn-sm" @onclick="() => Zoom(0.8)"><i class="bi bi-zoom-out"></i></button>
                     <button class="btn btn-sm" @onclick="FitToContent">Dopasuj</button>
 
                     @if (_selected is not null)

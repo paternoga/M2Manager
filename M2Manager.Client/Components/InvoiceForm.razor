@@ -1,4 +1,4 @@
-@inject ApiClient Api
+﻿@inject ApiClient Api
 @inject AppState State
 
 @* Formularz faktury — używany po uploadzie (dane z AI do potwierdzenia) i przy edycji z listy. *@
@@ -78,7 +78,7 @@ else if (Invoice.OcrStatus == OcrStatus.Failed)
         {
             <InputText id="inv-vendor" @bind-Value="_model.Vendor" placeholder="nazwa sklepu lub wykonawcy" />
             <button class="btn btn-sm" type="button" style="margin-top:.35rem" @onclick="BackToShopList">
-                ↩ Wybierz z listy
+                <i class="bi bi-arrow-return-left"></i> Wybierz z listy
             </button>
         }
         else
@@ -104,7 +104,15 @@ else if (Invoice.OcrStatus == OcrStatus.Failed)
             {
                 <button class="btn btn-sm" type="button" style="margin-top:.35rem"
                         disabled="@_addingShop" @onclick="AddVendorToDictionaryAsync">
-                    @(_addingShop ? "Dodawanie…" : "+ Dodaj do słownika sklepów")
+                    @if (_addingShop)
+                    {
+                        <text>Dodawanie…</text>
+                    }
+                    else
+                    {
+                        <i class="bi bi-plus-lg"></i>
+                        <text>Dodaj do słownika sklepów</text>
+                    }
                 </button>
             }
         }

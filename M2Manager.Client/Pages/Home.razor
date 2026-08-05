@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @attribute [Authorize]
 @inject ApiClient Api
 
@@ -10,8 +10,8 @@
         <p class="muted small">@(_dashboard is null ? "—" : _dashboard.PeriodLabel)</p>
     </div>
     <div class="btn-row">
-        <a class="btn btn-primary" href="faktury/dodaj">📷 Dodaj fakturę</a>
-        <a class="btn" href="zakupy">🛒 Lista zakupów</a>
+        <a class="btn btn-primary" href="faktury/dodaj"><i class="bi bi-camera"></i> Dodaj fakturę</a>
+        <a class="btn" href="zakupy"><i class="bi bi-cart3"></i> Lista zakupów</a>
     </div>
 </div>
 
@@ -24,7 +24,7 @@
 else if (_dashboard is null || _dashboard.Tiles.Count == 0)
 {
     <div class="card empty-state">
-        <span class="emoji">🏠</span>
+        <span class="emoji"><i class="bi bi-house"></i></span>
         <p>Nie ma jeszcze żadnego mieszkania.</p>
         <a class="btn btn-primary" href="mieszkania">Dodaj mieszkanie</a>
     </div>

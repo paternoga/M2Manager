@@ -12,7 +12,7 @@
         <p class="muted small">@_items.Count pozycji · grupowanie po pomieszczeniach</p>
     </div>
     <div class="btn-row">
-        <button class="btn btn-primary" @onclick="NewItem">+ Nowa pozycja</button>
+        <button class="btn btn-primary" @onclick="NewItem"><i class="bi bi-plus-lg"></i> Nowa pozycja</button>
         <button class="btn" @onclick="() => _showTools = !_showTools">Import / eksport</button>
     </div>
 </div>
@@ -106,10 +106,10 @@
                 <p class="small muted">Eksport uwzględnia aktualnie ustawione filtry.</p>
                 <div class="btn-row">
                     <a class="btn" href="@($"api/shopping/export/excel{BuildQuery()}")" target="_blank" rel="noopener">
-                        ⬇ Excel (.xlsx)
+                        <i class="bi bi-download"></i> Excel (.xlsx)
                     </a>
                     <a class="btn" href="@($"api/shopping/export/pdf{BuildQuery()}")" target="_blank" rel="noopener">
-                        ⬇ PDF
+                        <i class="bi bi-download"></i> PDF
                     </a>
                 </div>
             </div>
@@ -193,7 +193,7 @@
 else if (_items.Count == 0)
 {
     <div class="card empty-state">
-        <span class="emoji">🛒</span>
+        <span class="emoji"><i class="bi bi-cart3"></i></span>
         <p>Brak pozycji dla wybranych filtrów.</p>
         <button class="btn btn-primary" @onclick="NewItem">Dodaj pierwszą pozycję</button>
     </div>

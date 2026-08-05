@@ -6,7 +6,7 @@
         @foreach (var item in Items)
         {
             <NavLink href="@item.Href" Match="@item.Match">
-                <span class="nav-icon">@item.Icon</span>
+                <span class="nav-icon"><i class="bi @item.Icon"></i></span>
                 <span>@item.ShortLabel</span>
             </NavLink>
         }
@@ -18,16 +18,16 @@ else
         @foreach (var item in Items)
         {
             <NavLink href="@item.Href" Match="@item.Match">
-                <span class="nav-icon">@item.Icon</span>
+                <span class="nav-icon"><i class="bi @item.Icon"></i></span>
                 <span>@item.Label</span>
             </NavLink>
         }
         <NavLink href="faktury/dodaj" Match="NavLinkMatch.All">
-            <span class="nav-icon">📷</span>
+            <span class="nav-icon"><i class="bi bi-camera"></i></span>
             <span>Dodaj fakturę</span>
         </NavLink>
         <NavLink href="ustawienia" Match="NavLinkMatch.Prefix">
-            <span class="nav-icon">⚙️</span>
+            <span class="nav-icon"><i class="bi bi-gear"></i></span>
             <span>Słowniki</span>
         </NavLink>
     </nav>
@@ -38,14 +38,15 @@ else
     [Parameter]
     public bool Bottom { get; set; }
 
+    /// <summary>Icon to nazwa klasy Bootstrap Icons — konsekwentnie warianty konturowe, bez „-fill”.</summary>
     private sealed record NavItem(string Href, string Label, string ShortLabel, string Icon, NavLinkMatch Match);
 
     private static readonly NavItem[] Items =
     [
-        new("", "Pulpit", "Pulpit", "🏠", NavLinkMatch.All),
-        new("faktury", "Faktury", "Faktury", "🧾", NavLinkMatch.Prefix),
-        new("zakupy", "Lista zakupów", "Zakupy", "🛒", NavLinkMatch.Prefix),
-        new("mieszkania", "Mieszkania", "Metraż", "📐", NavLinkMatch.Prefix),
-        new("raporty", "Raporty", "Raporty", "📊", NavLinkMatch.Prefix)
+        new("", "Pulpit", "Pulpit", "bi-house", NavLinkMatch.All),
+        new("faktury", "Faktury", "Faktury", "bi-receipt", NavLinkMatch.Prefix),
+        new("zakupy", "Lista zakupów", "Zakupy", "bi-cart3", NavLinkMatch.Prefix),
+        new("mieszkania", "Mieszkania", "Metraż", "bi-rulers", NavLinkMatch.Prefix),
+        new("raporty", "Raporty", "Raporty", "bi-bar-chart", NavLinkMatch.Prefix)
     ];
 }

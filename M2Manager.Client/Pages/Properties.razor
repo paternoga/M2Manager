@@ -1,4 +1,4 @@
-@page "/mieszkania"
+﻿@page "/mieszkania"
 @attribute [Authorize]
 @inject ApiClient Api
 @inject AppState State
@@ -11,7 +11,7 @@
         <h1>Mieszkania i pomieszczenia</h1>
         <p class="muted small">Wymiary, otwory i wyliczone powierzchnie do malowania.</p>
     </div>
-    <button class="btn btn-primary" @onclick="NewProperty">+ Nowe mieszkanie</button>
+    <button class="btn btn-primary" @onclick="NewProperty"><i class="bi bi-plus-lg"></i> Nowe mieszkanie</button>
 </div>
 
 <StatusMessage Error="@_error" Success="@_success" />
@@ -56,7 +56,7 @@ else
             <div class="card-title">
                 <h2>@_areas.PropertyName — pomieszczenia</h2>
                 <div class="btn-row">
-                    <button class="btn btn-sm btn-primary" @onclick="NewRoom">+ Pomieszczenie</button>
+                    <button class="btn btn-sm btn-primary" @onclick="NewRoom"><i class="bi bi-plus-lg"></i> Pomieszczenie</button>
                     <a class="btn btn-sm" href="@($"mieszkania/{_areas.PropertyId}/rzut")">Rysuj rzut</a>
                 </div>
             </div>
@@ -64,7 +64,7 @@ else
             @if (_rooms.Count == 0)
             {
                 <div class="empty-state">
-                    <span class="emoji">📐</span>
+                    <span class="emoji"><i class="bi bi-rulers"></i></span>
                     <p>To mieszkanie nie ma jeszcze pomieszczeń.</p>
                 </div>
             }
@@ -328,7 +328,7 @@ else
                     <div class="card" style="background:var(--surface-alt)">
                         <div class="card-title">
                             <h3>Okna i drzwi</h3>
-                            <button class="btn btn-sm" type="button" @onclick="AddOpeningRow">+ Dodaj</button>
+                            <button class="btn btn-sm" type="button" @onclick="AddOpeningRow"><i class="bi bi-plus-lg"></i> Dodaj</button>
                         </div>
 
                         @if (_editingRoom.Openings.Count == 0)
