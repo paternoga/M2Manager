@@ -196,6 +196,11 @@ app.MapShoppingEndpoints();
 app.MapShopEndpoints();
 app.MapReportEndpoints();
 
+// Proste słowniki obsługuje jeden generyczny zestaw endpointów.
+app.MapLookupEndpoints<ExpenseCategory>("/api/expense-categories", "kategoria faktury");
+app.MapLookupEndpoints<ShoppingCategory>("/api/shopping-categories", "kategoria zakupów");
+app.MapLookupEndpoints<Payer>("/api/payers", "osoba finansująca");
+
 // Wszystko, co nie jest API ani plikiem statycznym, obsługuje Blazor (routing po stronie klienta).
 app.MapFallbackToFile("index.html");
 

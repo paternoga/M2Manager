@@ -156,6 +156,59 @@ else if (_summary is not null)
             </div>
 
             <div class="card">
+                <div class="card-title"><h2>Podział kosztów</h2></div>
+
+                @if (_summary.ByPayer.Count == 0)
+                {
+                    <p class="small muted">
+                        Żadna faktura w tym okresie nie ma przypisanej osoby finansującej.
+                        Ustawisz ją przy fakturze w polu „Finansuje”.
+                    </p>
+                }
+                else
+                {
+                    <div class="bar-chart">
+                        @foreach (var payer in _summary.ByPayer)
+                        {
+                            <div class="bar-row">
+                                <span class="small">@payer.PayerName</span>
+                                <div class="bar-track">
+                                    <div class="bar-fill" style="@BarWidth(payer.Total, MaxPayerTotal)"></div>
+                                </div>
+                                <span class="bar-value small">@Fmt.MoneyShort(payer.Total)</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="divider"></div>
+
+                    <div class="table-wrap">
+                        <table class="data">
+                            <thead>
+                            <tr>
+                                <th>Kto finansuje</th>
+                                <th class="num">Dokumentów</th>
+                                <th class="num">Kwota</th>
+                                <th class="num">Udział</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach (var payer in _summary.ByPayer)
+                            {
+                                <tr>
+                                    <td>@payer.PayerName</td>
+                                    <td class="num">@payer.InvoicesCount</td>
+                                    <td class="num">@Fmt.MoneyShort(payer.Total)</td>
+                                    <td class="num">@Fmt.Percent(payer.SharePercent)</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            <div class="card">
                 <div class="card-title"><h2>Rozkład miesięczny @_summary.Year</h2></div>
 
                 <div class="month-chart">
@@ -214,6 +267,9 @@ else if (_summary is not null)
 
     private decimal MaxCategoryTotal =>
         _summary?.ByCategory.Count > 0 ? _summary.ByCategory.Max(c => c.Total) : 0m;
+
+    private decimal MaxPayerTotal =>
+        _summary?.ByPayer.Count > 0 ? _summary.ByPayer.Max(p => p.Total) : 0m;
 
     private decimal MaxMonthTotal =>
         _summary?.ByMonth.Count > 0 ? _summary.ByMonth.Max(m => m.Total) : 0m;

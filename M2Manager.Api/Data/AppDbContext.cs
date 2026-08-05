@@ -13,6 +13,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<ShoppingCategory> ShoppingCategories => Set<ShoppingCategory>();
     public DbSet<Shop> Shops => Set<Shop>();
+    public DbSet<Payer> Payers => Set<Payer>();
     public DbSet<ShoppingItem> ShoppingItems => Set<ShoppingItem>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -99,6 +100,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .HasForeignKey(i => i.ExpenseCategoryId)
                 .OnDelete(DeleteBehavior.SetNull);
 
+            // Usunięcie osoby ze słownika nie może kasować faktur — gubimy tylko przypisanie.
+            e.HasOne(i => i.Payer)
+                .WithMany(p => p.Invoices)
+                .HasForeignKey(i => i.PayerId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             e.HasIndex(i => new { i.PropertyId, i.IssueDate });
             e.HasIndex(i => i.ExpenseCategoryId);
         });
@@ -108,6 +115,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.Property(c => c.Name).IsRequired().HasMaxLength(150);
             e.HasIndex(c => c.Name).IsUnique();
+        });
+
+        // ---------- Payer ----------
+        b.Entity<Payer>(e =>
+        {
+            e.Property(p => p.Name).IsRequired().HasMaxLength(150);
+            e.Property(p => p.Notes).HasMaxLength(500);
+            e.HasIndex(p => p.Name).IsUnique();
         });
 
         // ---------- Shop ----------
@@ -148,6 +163,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasOne(i => i.ShoppingCategory)
                 .WithMany(c => c.Items)
                 .HasForeignKey(i => i.ShoppingCategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            e.HasOne(i => i.Payer)
+                .WithMany(p => p.ShoppingItems)
+                .HasForeignKey(i => i.PayerId)
                 .OnDelete(DeleteBehavior.SetNull);
 
             e.HasOne(i => i.Invoice)

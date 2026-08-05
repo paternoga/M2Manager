@@ -72,6 +72,18 @@ else if (Invoice.OcrStatus == OcrStatus.Failed)
     </div>
 
     <div class="field">
+        <label for="inv-payer">Finansuje (podział kosztów)</label>
+        <select id="inv-payer" value="@(_model.PayerId?.ToString() ?? "")"
+                @onchange="e => _model.PayerId = ParseNullableInt(e.Value)">
+            <option value="">— nieprzypisane —</option>
+            @foreach (var payer in _payers)
+            {
+                <option value="@payer.Id">@payer.Name</option>
+            }
+        </select>
+    </div>
+
+    <div class="field">
         <label for="inv-vendor">Sprzedawca</label>
 
         @if (_manualVendor)
@@ -164,6 +176,7 @@ else if (Invoice.OcrStatus == OcrStatus.Failed)
     private List<PropertyDto> _properties = [];
     private List<RoomDto> _rooms = [];
     private List<LookupDto> _categories = [];
+    private List<LookupDto> _payers = [];
     private List<ShopDto> _shops = [];
     private bool _manualVendor;
     private bool _addingShop;
@@ -192,6 +205,7 @@ else if (Invoice.OcrStatus == OcrStatus.Failed)
             PropertyId = Invoice.PropertyId,
             RoomId = Invoice.RoomId,
             ExpenseCategoryId = Invoice.ExpenseCategoryId,
+            PayerId = Invoice.PayerId,
             Vendor = Invoice.Vendor,
             Amount = Invoice.Amount,
             Currency = string.IsNullOrWhiteSpace(Invoice.Currency) ? "PLN" : Invoice.Currency,
@@ -207,6 +221,7 @@ else if (Invoice.OcrStatus == OcrStatus.Failed)
         {
             _properties = await State.GetPropertiesAsync();
             _categories = await State.GetExpenseCategoriesAsync();
+            _payers = await State.GetPayersAsync();
             _shops = await State.GetShopsAsync();
 
             if (_model.PropertyId == 0)

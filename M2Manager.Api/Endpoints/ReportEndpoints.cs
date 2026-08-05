@@ -1,4 +1,4 @@
-using M2Manager.Api.Data;
+﻿using M2Manager.Api.Data;
 using M2Manager.Api.Services;
 using M2Manager.Shared;
 using M2Manager.Shared.Dtos;
@@ -115,6 +115,7 @@ public static class ReportEndpoints
                     .Where(i => i.PropertyId == property.Id)
                     .Include(i => i.Room)
                     .Include(i => i.ShoppingCategory)
+                    .Include(i => i.Payer)
                     .AsNoTracking()
                     .ToListAsync(ct);
 
@@ -189,6 +190,29 @@ public static class ReportEndpoints
             .OrderBy(m => m.Month)
             .ToList();
 
+        var total = Round(invoices.Sum(i => i.Amount ?? 0m));
+
+        var byPayer = invoices
+            .GroupBy(i => (i.PayerId, Name: i.Payer?.Name ?? "Nieprzypisane"))
+            .Select(g =>
+            {
+                var sum = Round(g.Sum(i => i.Amount ?? 0m));
+
+                return new PayerTotalDto
+                {
+                    PayerId = g.Key.PayerId,
+                    PayerName = g.Key.Name,
+                    InvoicesCount = g.Count(),
+                    Total = sum,
+                    SharePercent = total > 0m
+                        ? Math.Round(sum * 100m / total, 1, MidpointRounding.AwayFromZero)
+                        : 0m
+                };
+            })
+            .OrderByDescending(p => p.Total)
+            .ThenBy(p => p.PayerName, StringComparer.CurrentCulture)
+            .ToList();
+
         return new ReportSummaryDto
         {
             PropertyId = property.Id,
@@ -198,10 +222,11 @@ public static class ReportEndpoints
             PeriodLabel = Formatting.PeriodLabel(year, month),
             Currency = invoices.FirstOrDefault()?.Currency ?? "PLN",
             InvoicesCount = invoices.Count,
-            Total = Round(invoices.Sum(i => i.Amount ?? 0m)),
+            Total = total,
             MissingAmountCount = invoices.Count(i => i.Amount is null),
             ByCategory = byCategory,
-            ByMonth = byMonth
+            ByMonth = byMonth,
+            ByPayer = byPayer
         };
     }
 
@@ -229,6 +254,7 @@ public static class ReportEndpoints
                 i.Vendor,
                 i.ExpenseCategory?.Name,
                 i.Room?.Name,
+                i.Payer?.Name,
                 i.Description,
                 i.Amount,
                 i.Currency))
@@ -242,6 +268,7 @@ public static class ReportEndpoints
             Rows = rows,
             ByCategory = summary.ByCategory,
             ByMonth = summary.ByMonth,
+            ByPayer = summary.ByPayer,
             Total = summary.Total,
             MissingAmountCount = summary.MissingAmountCount
         };
@@ -261,6 +288,7 @@ public static class ReportEndpoints
         var invoices = await db.Invoices
             .Where(i => i.PropertyId == propertyId)
             .Include(i => i.ExpenseCategory)
+            .Include(i => i.Payer)
             .Include(i => i.Room)
             .AsNoTracking()
             .ToListAsync(ct);

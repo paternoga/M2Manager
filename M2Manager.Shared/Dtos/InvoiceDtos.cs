@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace M2Manager.Shared.Dtos;
 
@@ -11,6 +11,12 @@ public sealed class InvoiceDto
     public string? RoomName { get; set; }
     public int? ExpenseCategoryId { get; set; }
     public string? ExpenseCategoryName { get; set; }
+
+    /// <summary>Kto pokrył ten wydatek — podstawa podziału kosztów.</summary>
+    public int? PayerId { get; set; }
+
+    public string? PayerName { get; set; }
+
     public string? Vendor { get; set; }
     public decimal? Amount { get; set; }
     public string Currency { get; set; } = "PLN";
@@ -53,6 +59,7 @@ public sealed class InvoiceUpsertDto
 
     public int? RoomId { get; set; }
     public int? ExpenseCategoryId { get; set; }
+    public int? PayerId { get; set; }
 
     [StringLength(300)]
     public string? Vendor { get; set; }
@@ -128,6 +135,7 @@ public sealed class InvoiceQuery
     public int? PropertyId { get; set; }
     public int? RoomId { get; set; }
     public int? CategoryId { get; set; }
+    public int? PayerId { get; set; }
     public DateOnly? From { get; set; }
     public DateOnly? To { get; set; }
     public int Page { get; set; } = 1;

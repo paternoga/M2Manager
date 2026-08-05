@@ -52,6 +52,38 @@
         <div class="progress" style="margin-top:.35rem">
             <span style="@ProgressWidth(_summary.ProgressPercent)"></span>
         </div>
+
+        @if (_summary.ByPayer.Count > 0)
+        {
+            <div class="divider"></div>
+            <div class="row-between small"><strong>Podział kosztów</strong></div>
+
+            <div class="table-wrap">
+                <table class="data">
+                    <thead>
+                    <tr>
+                        <th>Kto finansuje</th>
+                        <th class="num">Pozycji</th>
+                        <th class="num">Szacowany</th>
+                        <th class="num">Budżet</th>
+                        <th class="num">Wydane</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var payer in _summary.ByPayer)
+                    {
+                        <tr>
+                            <td>@payer.Key</td>
+                            <td class="num">@payer.ItemsCount</td>
+                            <td class="num">@Fmt.MoneyShort(payer.TotalCost)</td>
+                            <td class="num">@Fmt.MoneyShort(payer.PlannedBudget)</td>
+                            <td class="num"><strong>@Fmt.MoneyShort(payer.ActualCost)</strong></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 }
 
@@ -156,6 +188,17 @@
         </div>
 
         <div>
+            <label for="s-payer">Finansuje</label>
+            <select id="s-payer" value="@(_payerId?.ToString() ?? "")" @onchange="OnPayerChangedAsync">
+                <option value="">Wszyscy</option>
+                @foreach (var payer in _payers)
+                {
+                    <option value="@payer.Id">@payer.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
             <label for="s-status">Status</label>
             <select id="s-status" value="@(_status?.ToString() ?? "")" @onchange="OnStatusChangedAsync">
                 <option value="">Wszystkie</option>
@@ -220,6 +263,7 @@ else
                     <th class="num">Rzeczywisty</th>
                     <th class="sortable" @onclick='@(() => SortByAsync("status"))'>Status @SortMark("status")</th>
                     <th class="sortable" @onclick='@(() => SortByAsync("priority"))'>Priorytet @SortMark("priority")</th>
+                    <th>Finansuje</th>
                     <th>Wykonawca/sklep</th>
                     <th></th>
                 </tr>
@@ -357,6 +401,17 @@ else
                                 </select>
                             </td>
 
+                            <td>
+                                <select value="@(item.PayerId?.ToString() ?? "")"
+                                        @onchange='e => SaveInlineAsync(item, "payer", e.Value)'>
+                                    <option value="">—</option>
+                                    @foreach (var payer in _payers)
+                                    {
+                                        <option value="@payer.Id">@payer.Name</option>
+                                    }
+                                </select>
+                            </td>
+
                             <td class="small">@Fmt.Text(item.Vendor)</td>
 
                             <td class="nowrap">
@@ -395,6 +450,10 @@ else
                                 @if (!string.IsNullOrWhiteSpace(item.Vendor))
                                 {
                                     <span>@item.Vendor</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.PayerName))
+                                {
+                                    <span>finansuje: @item.PayerName</span>
                                 }
                             </div>
                         </div>
@@ -562,6 +621,18 @@ else
                 </div>
 
                 <div class="field">
+                    <label for="i-payer">Finansuje (podział kosztów)</label>
+                    <select id="i-payer" value="@(_draft.PayerId?.ToString() ?? "")"
+                            @onchange="e => _draft.PayerId = ParseNullableInt(e.Value)">
+                        <option value="">— nieprzypisane —</option>
+                        @foreach (var payer in _payers)
+                        {
+                            <option value="@payer.Id">@payer.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="field">
                     <label for="i-link">Link</label>
                     <InputText id="i-link" @bind-Value="_draft.Link" placeholder="https://…" />
                 </div>
@@ -602,11 +673,13 @@ else
     private List<RoomDto> _rooms = [];
     private List<RoomDto> _draftRooms = [];
     private List<LookupDto> _categories = [];
+    private List<LookupDto> _payers = [];
     private List<InvoiceDto> _invoices = [];
 
     private int? _propertyId;
     private int? _roomId;
     private int? _categoryId;
+    private int? _payerId;
     private ShoppingStatus? _status;
     private ShoppingPriority? _priority;
     private string? _search;
@@ -750,6 +823,12 @@ else
         await ReloadAsync();
     }
 
+    private async Task OnPayerChangedAsync(ChangeEventArgs e)
+    {
+        _payerId = ParseNullableInt(e.Value);
+        await ReloadAsync();
+    }
+
     private async Task OnStatusChangedAsync(ChangeEventArgs e)
     {
         _status = Enum.TryParse<ShoppingStatus>(e.Value?.ToString(), out var parsed) ? parsed : null;
@@ -862,6 +941,10 @@ else
                 dto.Priority = priority;
                 break;
 
+            case "payer":
+                dto.PayerId = ParseNullableInt(text);
+                break;
+
             default:
                 return;
         }
@@ -904,6 +987,7 @@ else
             // Filtr „Całe mieszkanie” to wartownik, nie prawdziwe Id — nowa pozycja dostaje null.
             RoomId = _roomId > ShoppingConstants.WholePropertyRoomId ? _roomId : null,
             ShoppingCategoryId = _categoryId,
+            PayerId = _payerId,
             Status = ShoppingStatus.ToBuy,
             Priority = ShoppingPriority.MustHave
         };
@@ -1084,6 +1168,7 @@ else
         PropertyId = item.PropertyId,
         RoomId = item.RoomId,
         ShoppingCategoryId = item.ShoppingCategoryId,
+        PayerId = item.PayerId,
         Name = item.Name,
         Description = item.Description,
         CalculationNotes = item.CalculationNotes,

@@ -55,6 +55,18 @@
         </div>
 
         <div>
+            <label for="f-payer">Finansuje</label>
+            <select id="f-payer" value="@(_query.PayerId?.ToString() ?? "")"
+                    @onchange="async e => { _query.PayerId = ParseNullableInt(e.Value); _query.Page = 1; await ReloadAsync(); }">
+                <option value="">Wszyscy</option>
+                @foreach (var payer in _payers)
+                {
+                    <option value="@payer.Id">@payer.Name</option>
+                }
+            </select>
+        </div>
+
+        <div>
             <label for="f-from">Od</label>
             <input id="f-from" type="date" value="@ToInput(_query.From)"
                    @onchange="async e => { _query.From = ParseDate(e.Value); await ReloadAsync(); }" />
@@ -96,6 +108,7 @@ else
                     <th>Sprzedawca</th>
                     <th>Kategoria</th>
                     <th>Mieszkanie / pomieszczenie</th>
+                    <th>Finansuje</th>
                     <th class="num">Kwota</th>
                     <th>Status</th>
                     <th></th>
@@ -123,6 +136,16 @@ else
                                 <span class="muted small"> · @invoice.RoomName</span>
                             }
                         </td>
+                        <td>
+                            @if (string.IsNullOrWhiteSpace(invoice.PayerName))
+                            {
+                                <span class="muted small">—</span>
+                            }
+                            else
+                            {
+                                <span class="badge">@invoice.PayerName</span>
+                            }
+                        </td>
                         <td class="num nowrap">@Fmt.Money(invoice.Amount, invoice.Currency)</td>
                         <td><span class="@Fmt.OcrBadge(invoice.OcrStatus)">@PolishLabels.For(invoice.OcrStatus)</span></td>
                         <td class="nowrap">
@@ -147,6 +170,10 @@ else
                             <span>@Fmt.Date(invoice.IssueDate)</span>
                             <span>@Fmt.Text(invoice.ExpenseCategoryName)</span>
                             <span>@invoice.PropertyName</span>
+                            @if (!string.IsNullOrWhiteSpace(invoice.PayerName))
+                            {
+                                <span>finansuje: @invoice.PayerName</span>
+                            }
                         </div>
                     </div>
                     <div class="right nowrap">
@@ -211,6 +238,7 @@ else
     private List<PropertyDto> _properties = [];
     private List<RoomDto> _rooms = [];
     private List<LookupDto> _categories = [];
+    private List<LookupDto> _payers = [];
     private InvoiceDto? _editing;
 
     private bool _loading = true;
@@ -228,6 +256,7 @@ else
         {
             _properties = await State.GetPropertiesAsync();
             _categories = await State.GetExpenseCategoriesAsync();
+            _payers = await State.GetPayersAsync();
 
             _query.PropertyId = PropertyFromQuery ?? State.SelectedPropertyId;
             await LoadRoomsAsync();
@@ -290,6 +319,7 @@ else
         _query.PropertyId = null;
         _query.RoomId = null;
         _query.CategoryId = null;
+        _query.PayerId = null;
         _query.From = null;
         _query.To = null;
         _query.Page = 1;

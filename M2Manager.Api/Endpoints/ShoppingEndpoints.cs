@@ -1,4 +1,4 @@
-using M2Manager.Api.Data;
+﻿using M2Manager.Api.Data;
 using M2Manager.Api.Services;
 using M2Manager.Shared;
 using M2Manager.Shared.Dtos;
@@ -12,7 +12,6 @@ public static class ShoppingEndpoints
     public static void MapShoppingEndpoints(this IEndpointRouteBuilder app)
     {
         MapItems(app);
-        MapCategories(app);
     }
 
     private static void MapItems(IEndpointRouteBuilder app)
@@ -24,6 +23,7 @@ public static class ShoppingEndpoints
             int? propertyId,
             int? roomId,
             int? categoryId,
+            int? payerId,
             ShoppingStatus? status,
             ShoppingPriority? priority,
             string? search,
@@ -31,14 +31,14 @@ public static class ShoppingEndpoints
             AppDbContext db,
             CancellationToken ct) =>
         {
-            var items = await LoadItemsAsync(db, propertyId, roomId, categoryId, status, priority, search, ct);
+            var items = await LoadItemsAsync(db, propertyId, roomId, categoryId, payerId, status, priority, search, ct);
             return Results.Ok(SortItems(items, sort));
         });
 
         // ---------- sumy ----------
         group.MapGet("/summary", async (int? propertyId, AppDbContext db, CancellationToken ct) =>
         {
-            var items = await LoadItemsAsync(db, propertyId, null, null, null, null, null, ct);
+            var items = await LoadItemsAsync(db, propertyId, null, null, null, null, null, null, ct);
             return Results.Ok(ShoppingSummaryBuilder.Build(propertyId ?? 0, items));
         });
 
@@ -167,6 +167,7 @@ public static class ShoppingEndpoints
             int? propertyId,
             int? roomId,
             int? categoryId,
+            int? payerId,
             ShoppingStatus? status,
             ShoppingPriority? priority,
             string? search,
@@ -176,7 +177,7 @@ public static class ShoppingEndpoints
             CancellationToken ct) =>
         {
             var data = await BuildShoppingReportAsync(
-                db, propertyId, roomId, categoryId, status, priority, search, sort, ct);
+                db, propertyId, roomId, categoryId, payerId, status, priority, search, sort, ct);
 
             var bytes = excel.BuildShoppingList(data);
 
@@ -190,6 +191,7 @@ public static class ShoppingEndpoints
             int? propertyId,
             int? roomId,
             int? categoryId,
+            int? payerId,
             ShoppingStatus? status,
             ShoppingPriority? priority,
             string? search,
@@ -199,7 +201,7 @@ public static class ShoppingEndpoints
             CancellationToken ct) =>
         {
             var data = await BuildShoppingReportAsync(
-                db, propertyId, roomId, categoryId, status, priority, search, sort, ct);
+                db, propertyId, roomId, categoryId, payerId, status, priority, search, sort, ct);
 
             var bytes = pdf.BuildShoppingList(data);
 
@@ -207,85 +209,6 @@ public static class ShoppingEndpoints
         });
     }
 
-    // ---------------------------------------------------------------- kategorie zakupów
-
-    private static void MapCategories(IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/shopping-categories").RequireAuthorization();
-
-        group.MapGet("/", async (AppDbContext db, CancellationToken ct) =>
-        {
-            var categories = await db.ShoppingCategories
-                .OrderBy(c => c.SortOrder)
-                .ThenBy(c => c.Name)
-                .AsNoTracking()
-                .ToListAsync(ct);
-
-            return Results.Ok(categories.Select(c => c.ToDto()).ToList());
-        });
-
-        group.MapPost("/", async (LookupUpsertDto dto, AppDbContext db, CancellationToken ct) =>
-        {
-            var name = dto.Name?.Trim();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return Results.BadRequest(new { message = "Nazwa kategorii jest wymagana." });
-            }
-
-            if (await db.ShoppingCategories.AnyAsync(c => c.Name == name, ct))
-            {
-                return Results.Conflict(new { message = "Kategoria o tej nazwie już istnieje." });
-            }
-
-            var maxOrder = await db.ShoppingCategories.MaxAsync(c => (int?)c.SortOrder, ct) ?? 0;
-
-            var category = new ShoppingCategory
-            {
-                Name = name,
-                SortOrder = dto.SortOrder > 0 ? dto.SortOrder : maxOrder + 10
-            };
-
-            db.ShoppingCategories.Add(category);
-            await db.SaveChangesAsync(ct);
-
-            return Results.Created($"/api/shopping-categories/{category.Id}", category.ToDto());
-        });
-
-        group.MapPut("/{id:int}", async (int id, LookupUpsertDto dto, AppDbContext db, CancellationToken ct) =>
-        {
-            var category = await db.ShoppingCategories.FirstOrDefaultAsync(c => c.Id == id, ct);
-            if (category is null)
-            {
-                return Results.NotFound();
-            }
-
-            var name = dto.Name?.Trim();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return Results.BadRequest(new { message = "Nazwa kategorii jest wymagana." });
-            }
-
-            category.Name = name;
-            category.SortOrder = dto.SortOrder;
-            await db.SaveChangesAsync(ct);
-
-            return Results.Ok(category.ToDto());
-        });
-
-        group.MapDelete("/{id:int}", async (int id, AppDbContext db, CancellationToken ct) =>
-        {
-            var category = await db.ShoppingCategories.FirstOrDefaultAsync(c => c.Id == id, ct);
-            if (category is null)
-            {
-                return Results.NotFound();
-            }
-
-            db.ShoppingCategories.Remove(category);
-            await db.SaveChangesAsync(ct);
-
-            return Results.NoContent();
-        });
-    }
 
     // ---------------------------------------------------------------- pomocnicze
 
@@ -294,6 +217,7 @@ public static class ShoppingEndpoints
         int? propertyId,
         int? roomId,
         int? categoryId,
+        int? payerId,
         ShoppingStatus? status,
         ShoppingPriority? priority,
         string? search,
@@ -302,6 +226,7 @@ public static class ShoppingEndpoints
         var query = db.ShoppingItems
             .Include(i => i.Room)
             .Include(i => i.ShoppingCategory)
+            .Include(i => i.Payer)
             .Include(i => i.Invoice)
             .AsQueryable();
 
@@ -323,6 +248,11 @@ public static class ShoppingEndpoints
         if (categoryId.HasValue)
         {
             query = query.Where(i => i.ShoppingCategoryId == categoryId);
+        }
+
+        if (payerId.HasValue)
+        {
+            query = query.Where(i => i.PayerId == payerId);
         }
 
         if (status.HasValue)
@@ -353,6 +283,7 @@ public static class ShoppingEndpoints
         var item = await db.ShoppingItems
             .Include(i => i.Room)
             .Include(i => i.ShoppingCategory)
+            .Include(i => i.Payer)
             .Include(i => i.Invoice)
             .AsNoTracking()
             .FirstOrDefaultAsync(i => i.Id == id, ct);
@@ -428,6 +359,11 @@ public static class ShoppingEndpoints
             return Results.BadRequest(new { message = "Wskazana faktura nie istnieje." });
         }
 
+        if (dto.PayerId.HasValue && !await db.Payers.AnyAsync(p => p.Id == dto.PayerId, ct))
+        {
+            return Results.BadRequest(new { message = "Wskazana osoba nie istnieje w słowniku." });
+        }
+
         return null;
     }
 
@@ -436,6 +372,7 @@ public static class ShoppingEndpoints
         int? propertyId,
         int? roomId,
         int? categoryId,
+        int? payerId,
         ShoppingStatus? status,
         ShoppingPriority? priority,
         string? search,
@@ -443,7 +380,7 @@ public static class ShoppingEndpoints
         CancellationToken ct)
     {
         var items = SortItems(
-            await LoadItemsAsync(db, propertyId, roomId, categoryId, status, priority, search, ct),
+            await LoadItemsAsync(db, propertyId, roomId, categoryId, payerId, status, priority, search, ct),
             sort);
 
         var propertyName = propertyId.HasValue

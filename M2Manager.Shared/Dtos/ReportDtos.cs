@@ -8,6 +8,18 @@ public sealed class CategoryTotalDto
     public decimal Total { get; set; }
 }
 
+/// <summary>Ile kosztów pokryła dana osoba — podstawa rozliczenia między domownikami.</summary>
+public sealed class PayerTotalDto
+{
+    public int? PayerId { get; set; }
+    public string PayerName { get; set; } = "Nieprzypisane";
+    public int InvoicesCount { get; set; }
+    public decimal Total { get; set; }
+
+    /// <summary>Udział procentowy w sumie okresu.</summary>
+    public decimal SharePercent { get; set; }
+}
+
 public sealed class MonthTotalDto
 {
     public int Year { get; set; }
@@ -33,6 +45,9 @@ public sealed class ReportSummaryDto
 
     public List<CategoryTotalDto> ByCategory { get; set; } = [];
     public List<MonthTotalDto> ByMonth { get; set; } = [];
+
+    /// <summary>Podział kosztów — kto ile pokrył w tym okresie.</summary>
+    public List<PayerTotalDto> ByPayer { get; set; } = [];
 }
 
 /// <summary>Kafelek mieszkania na dashboardzie.</summary>

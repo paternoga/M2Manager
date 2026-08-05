@@ -99,11 +99,12 @@ public sealed class PdfExportService
                 {
                     table.ColumnsDefinition(columns =>
                     {
-                        columns.ConstantColumn(58);  // data
-                        columns.RelativeColumn(2.4f); // sprzedawca
-                        columns.RelativeColumn(2.0f); // kategoria
-                        columns.RelativeColumn(1.6f); // pomieszczenie
-                        columns.ConstantColumn(78);  // kwota
+                        columns.ConstantColumn(58);   // data
+                        columns.RelativeColumn(2.2f); // sprzedawca
+                        columns.RelativeColumn(1.9f); // kategoria
+                        columns.RelativeColumn(1.4f); // pomieszczenie
+                        columns.RelativeColumn(1.3f); // finansuje
+                        columns.ConstantColumn(78);   // kwota
                     });
 
                     table.Header(header =>
@@ -112,6 +113,7 @@ public sealed class PdfExportService
                         header.Cell().Element(HeaderCell).Text("Sprzedawca");
                         header.Cell().Element(HeaderCell).Text("Kategoria");
                         header.Cell().Element(HeaderCell).Text("Pomieszczenie");
+                        header.Cell().Element(HeaderCell).Text("Finansuje");
                         header.Cell().Element(HeaderCell).AlignRight().Text("Kwota");
                     });
 
@@ -121,6 +123,7 @@ public sealed class PdfExportService
                         table.Cell().Element(BodyCell).Text(Formatting.Text(row.Vendor));
                         table.Cell().Element(BodyCell).Text(Formatting.Text(row.Category));
                         table.Cell().Element(BodyCell).Text(Formatting.Text(row.Room));
+                        table.Cell().Element(BodyCell).Text(Formatting.Text(row.Payer));
                         table.Cell().Element(BodyCell).AlignRight()
                             .Text(Formatting.Money(row.Amount, row.Currency));
                     }
@@ -164,6 +167,45 @@ public sealed class PdfExportService
                             .Text(data.ByCategory.Sum(c => c.InvoicesCount).ToString()).SemiBold();
                         table.Cell().Element(TotalCell).AlignRight()
                             .Text(Formatting.Money(data.Total, data.Currency)).SemiBold();
+                    });
+                });
+            }
+
+            // ---- podział kosztów między osoby ----
+            if (data.ByPayer.Count > 0)
+            {
+                column.Item().Column(section =>
+                {
+                    section.Item().PaddingBottom(4).Text("Podział kosztów")
+                        .FontSize(11).SemiBold().FontColor(Accent);
+
+                    section.Item().Table(table =>
+                    {
+                        table.ColumnsDefinition(columns =>
+                        {
+                            columns.RelativeColumn(3);
+                            columns.ConstantColumn(70);
+                            columns.ConstantColumn(90);
+                            columns.ConstantColumn(60);
+                        });
+
+                        table.Header(header =>
+                        {
+                            header.Cell().Element(HeaderCell).Text("Kto finansuje");
+                            header.Cell().Element(HeaderCell).AlignRight().Text("Dokumentów");
+                            header.Cell().Element(HeaderCell).AlignRight().Text("Kwota");
+                            header.Cell().Element(HeaderCell).AlignRight().Text("Udział");
+                        });
+
+                        foreach (var payer in data.ByPayer)
+                        {
+                            table.Cell().Element(BodyCell).Text(payer.PayerName);
+                            table.Cell().Element(BodyCell).AlignRight().Text(payer.InvoicesCount.ToString());
+                            table.Cell().Element(BodyCell).AlignRight()
+                                .Text(Formatting.Money(payer.Total, data.Currency));
+                            table.Cell().Element(BodyCell).AlignRight()
+                                .Text($"{Formatting.Number(payer.SharePercent)}%");
+                        }
                     });
                 });
             }
@@ -305,6 +347,7 @@ public sealed class PdfExportService
                             columns.ConstantColumn(62);   // koszt całk.
                             columns.ConstantColumn(62);   // budżet
                             columns.ConstantColumn(62);   // rzeczywisty
+                            columns.ConstantColumn(60);   // finansuje
                             columns.ConstantColumn(58);   // status
                         });
 
@@ -319,6 +362,7 @@ public sealed class PdfExportService
                             header.Cell().Element(HeaderCell).AlignRight().Text("~Koszt całk.");
                             header.Cell().Element(HeaderCell).AlignRight().Text("Budżet");
                             header.Cell().Element(HeaderCell).AlignRight().Text("Rzeczyw.");
+                            header.Cell().Element(HeaderCell).Text("Finansuje");
                             header.Cell().Element(HeaderCell).Text("Status");
                         });
 
@@ -344,6 +388,7 @@ public sealed class PdfExportService
                             table.Cell().Element(BodyCell).AlignRight().Text(Formatting.Number(item.TotalCost));
                             table.Cell().Element(BodyCell).AlignRight().Text(Formatting.Number(item.PlannedBudget));
                             table.Cell().Element(BodyCell).AlignRight().Text(Formatting.Number(item.ActualCost));
+                            table.Cell().Element(BodyCell).Text(Formatting.Text(item.PayerName)).FontSize(7);
                             table.Cell().Element(BodyCell).Text(PolishLabels.For(item.Status)).FontSize(7);
                         }
                     });

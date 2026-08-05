@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace M2Manager.Shared.Dtos;
 
@@ -14,6 +14,12 @@ public sealed class ShoppingItemDto
 
     public int? ShoppingCategoryId { get; set; }
     public string? CategoryName { get; set; }
+
+    /// <summary>Kto finansuje tę pozycję — niezależne od AssignedTo, czyli od tego, kto ją kupuje.</summary>
+    public int? PayerId { get; set; }
+
+    public string? PayerName { get; set; }
+
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string? CalculationNotes { get; set; }
@@ -42,6 +48,7 @@ public sealed class ShoppingItemUpsertDto
 
     public int? RoomId { get; set; }
     public int? ShoppingCategoryId { get; set; }
+    public int? PayerId { get; set; }
 
     [Required(ErrorMessage = "Nazwa pozycji jest wymagana.")]
     [StringLength(300)]
@@ -120,6 +127,9 @@ public sealed class ShoppingSummaryDto
     public List<ShoppingGroupTotalDto> ByRoom { get; set; } = [];
     public List<ShoppingGroupTotalDto> ByCategory { get; set; } = [];
     public List<ShoppingGroupTotalDto> ByStatus { get; set; } = [];
+
+    /// <summary>Podział kosztów — ile faktycznie włożyła każda z osób.</summary>
+    public List<ShoppingGroupTotalDto> ByPayer { get; set; } = [];
 }
 
 /// <summary>Wynik importu arkusza .xlsx.</summary>

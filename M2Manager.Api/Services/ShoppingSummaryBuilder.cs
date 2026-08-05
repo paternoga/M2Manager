@@ -33,7 +33,8 @@ public static class ShoppingSummaryBuilder
             BudgetDifference = Round(plannedBudget - actualCost),
             ByRoom = GroupBy(active, i => (i.RoomId, i.RoomName)),
             ByCategory = GroupBy(active, i => (i.ShoppingCategoryId, i.CategoryName ?? "Bez kategorii")),
-            ByStatus = GroupBy(items, i => ((int?)i.Status, PolishLabels.For(i.Status)))
+            ByStatus = GroupBy(items, i => ((int?)i.Status, PolishLabels.For(i.Status))),
+            ByPayer = GroupBy(active, i => (i.PayerId, i.PayerName ?? "Nieprzypisane"))
         };
     }
 

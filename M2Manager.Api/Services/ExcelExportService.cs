@@ -1,4 +1,4 @@
-using ClosedXML.Excel;
+﻿using ClosedXML.Excel;
 using M2Manager.Shared;
 using M2Manager.Shared.Dtos;
 
@@ -33,7 +33,7 @@ public sealed class ExcelExportService
         ws.Cell(3, 1).Value = $"Wygenerowano: {Formatting.DateTimeLocal(data.GeneratedAtUtc)}";
 
         const int headerRow = 5;
-        string[] headers = ["Data", "Sprzedawca", "Kategoria", "Pomieszczenie", "Opis", "Kwota", "Waluta"];
+        string[] headers = ["Data", "Sprzedawca", "Kategoria", "Pomieszczenie", "Finansuje", "Opis", "Kwota", "Waluta"];
 
         for (var i = 0; i < headers.Length; i++)
         {
@@ -49,27 +49,28 @@ public sealed class ExcelExportService
             ws.Cell(row, 2).Value = item.Vendor ?? string.Empty;
             ws.Cell(row, 3).Value = item.Category ?? string.Empty;
             ws.Cell(row, 4).Value = item.Room ?? string.Empty;
-            ws.Cell(row, 5).Value = item.Description ?? string.Empty;
-            SetMoney(ws.Cell(row, 6), item.Amount);
-            ws.Cell(row, 7).Value = item.Currency;
+            ws.Cell(row, 5).Value = item.Payer ?? string.Empty;
+            ws.Cell(row, 6).Value = item.Description ?? string.Empty;
+            SetMoney(ws.Cell(row, 7), item.Amount);
+            ws.Cell(row, 8).Value = item.Currency;
             row++;
         }
 
         // Wiersz sumy — jako formuła, żeby zgadzał się nawet po ręcznej edycji arkusza.
         if (data.Rows.Count > 0)
         {
-            ws.Cell(row, 5).Value = "Razem";
-            ws.Cell(row, 5).Style.Font.SetBold();
-            ws.Cell(row, 6).FormulaA1 = $"SUM(F{headerRow + 1}:F{row - 1})";
-            ws.Cell(row, 6).Style.NumberFormat.Format = MoneyFormat;
+            ws.Cell(row, 6).Value = "Razem";
             ws.Cell(row, 6).Style.Font.SetBold();
-            ws.Cell(row, 7).Value = data.Currency;
+            ws.Cell(row, 7).FormulaA1 = $"SUM(G{headerRow + 1}:G{row - 1})";
+            ws.Cell(row, 7).Style.NumberFormat.Format = MoneyFormat;
+            ws.Cell(row, 7).Style.Font.SetBold();
+            ws.Cell(row, 8).Value = data.Currency;
             ws.Range(row, 1, row, headers.Length).Style.Border.TopBorder = XLBorderStyleValues.Thin;
         }
 
         ws.SheetView.FreezeRows(headerRow);
         ws.Columns().AdjustToContents();
-        ws.Column(5).Width = Math.Min(ws.Column(5).Width, 45);
+        ws.Column(6).Width = Math.Min(ws.Column(6).Width, 45);
     }
 
     private static void BuildInvoiceSummarySheet(XLWorkbook workbook, InvoiceReportData data)
@@ -98,6 +99,30 @@ public sealed class ExcelExportService
         SetMoney(ws.Cell(row, 3), data.Total);
         ws.Cell(row, 3).Style.Font.SetBold();
         ws.Range(row, 1, row, 3).Style.Border.TopBorder = XLBorderStyleValues.Thin;
+
+        // ---- podział kosztów między osoby ----
+        var payerStart = row + 3;
+        ws.Cell(payerStart, 1).Value = "Podział kosztów";
+        ws.Cell(payerStart, 1).Style.Font.SetBold().Font.SetFontSize(12);
+
+        ws.Cell(payerStart + 1, 1).Value = "Kto finansuje";
+        ws.Cell(payerStart + 1, 2).Value = "Dokumentów";
+        ws.Cell(payerStart + 1, 3).Value = "Kwota";
+        ws.Cell(payerStart + 1, 4).Value = "Udział";
+        StyleHeader(ws.Range(payerStart + 1, 1, payerStart + 1, 4));
+
+        var payerRow = payerStart + 2;
+        foreach (var payer in data.ByPayer)
+        {
+            ws.Cell(payerRow, 1).Value = payer.PayerName;
+            ws.Cell(payerRow, 2).Value = payer.InvoicesCount;
+            SetMoney(ws.Cell(payerRow, 3), payer.Total);
+            ws.Cell(payerRow, 4).Value = payer.SharePercent / 100m;
+            ws.Cell(payerRow, 4).Style.NumberFormat.Format = "0.0%";
+            payerRow++;
+        }
+
+        row = payerRow;
 
         // ---- rozkład miesięczny ----
         var monthStart = row + 3;
@@ -149,7 +174,7 @@ public sealed class ExcelExportService
         [
             "L.p", "Pomieszczenie", "Kategoria", "Pozycja", "Opis", "Uwagi/obliczenia",
             "Ilość", "Jednostka", "~Koszt szt.", "~Koszt całk.", "Planowany budżet (z amortyzacją)",
-            "Rzeczywisty koszt", "Wykonawca/sklep", "Link", "Status", "Priorytet",
+            "Rzeczywisty koszt", "Finansuje", "Wykonawca/sklep", "Link", "Status", "Priorytet",
             "Data zakupu", "Faktura", "Kto kupuje"
         ];
 
@@ -180,19 +205,20 @@ public sealed class ExcelExportService
             SetMoney(ws.Cell(row, 10), item.TotalCost);
             SetMoney(ws.Cell(row, 11), item.PlannedBudget);
             SetMoney(ws.Cell(row, 12), item.ActualCost);
-            ws.Cell(row, 13).Value = item.Vendor ?? string.Empty;
+            ws.Cell(row, 13).Value = item.PayerName ?? string.Empty;
+            ws.Cell(row, 14).Value = item.Vendor ?? string.Empty;
 
             if (!string.IsNullOrWhiteSpace(item.Link))
             {
-                ws.Cell(row, 14).Value = item.Link;
-                TrySetHyperlink(ws.Cell(row, 14), item.Link);
+                ws.Cell(row, 15).Value = item.Link;
+                TrySetHyperlink(ws.Cell(row, 15), item.Link);
             }
 
-            ws.Cell(row, 15).Value = PolishLabels.For(item.Status);
-            ws.Cell(row, 16).Value = PolishLabels.For(item.Priority);
-            SetDate(ws.Cell(row, 17), item.PurchaseDate);
-            ws.Cell(row, 18).Value = item.InvoiceLabel ?? string.Empty;
-            ws.Cell(row, 19).Value = item.AssignedTo ?? string.Empty;
+            ws.Cell(row, 16).Value = PolishLabels.For(item.Status);
+            ws.Cell(row, 17).Value = PolishLabels.For(item.Priority);
+            SetDate(ws.Cell(row, 18), item.PurchaseDate);
+            ws.Cell(row, 19).Value = item.InvoiceLabel ?? string.Empty;
+            ws.Cell(row, 20).Value = item.AssignedTo ?? string.Empty;
 
             row++;
         }
@@ -219,7 +245,7 @@ public sealed class ExcelExportService
         ws.Columns().AdjustToContents();
 
         // Długie teksty potrafią rozjechać arkusz — ograniczamy szerokość.
-        foreach (var column in new[] { 5, 6, 14 })
+        foreach (var column in new[] { 5, 6, 15 })
         {
             ws.Column(column).Width = Math.Min(ws.Column(column).Width, 40);
         }
@@ -254,7 +280,9 @@ public sealed class ExcelExportService
         row += 2;
         row = WriteGroupTable(ws, row, "Według kategorii", summary.ByCategory);
         row += 2;
-        WriteGroupTable(ws, row, "Według statusu", summary.ByStatus);
+        row = WriteGroupTable(ws, row, "Według statusu", summary.ByStatus);
+        row += 2;
+        WriteGroupTable(ws, row, "Podział kosztów (kto finansuje)", summary.ByPayer);
 
         ws.Columns().AdjustToContents();
     }

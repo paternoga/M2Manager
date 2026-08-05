@@ -8,6 +8,7 @@ public sealed record InvoiceReportRow(
     string? Vendor,
     string? Category,
     string? Room,
+    string? Payer,
     string? Description,
     decimal? Amount,
     string Currency);
@@ -23,6 +24,7 @@ public sealed class InvoiceReportData
     public List<InvoiceReportRow> Rows { get; init; } = [];
     public List<CategoryTotalDto> ByCategory { get; init; } = [];
     public List<MonthTotalDto> ByMonth { get; init; } = [];
+    public List<PayerTotalDto> ByPayer { get; init; } = [];
 
     public decimal Total { get; init; }
     public int MissingAmountCount { get; init; }

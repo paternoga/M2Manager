@@ -102,6 +102,20 @@ public sealed class ApiClient(HttpClient http)
     public Task DeleteShopAsync(int id) =>
         SendAsync(HttpMethod.Delete, $"api/shops/{id}");
 
+    // ---------------------------------------------------------------- osoby finansujące
+
+    public Task<List<LookupDto>> GetPayersAsync() =>
+        GetAsync<List<LookupDto>>("api/payers");
+
+    public Task<LookupDto> CreatePayerAsync(LookupUpsertDto dto) =>
+        PostAsync<LookupUpsertDto, LookupDto>("api/payers", dto);
+
+    public Task<LookupDto> UpdatePayerAsync(int id, LookupUpsertDto dto) =>
+        PutAsync<LookupUpsertDto, LookupDto>($"api/payers/{id}", dto);
+
+    public Task DeletePayerAsync(int id) =>
+        SendAsync(HttpMethod.Delete, $"api/payers/{id}");
+
     public Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQuery query)
     {
         var parameters = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
@@ -119,6 +133,11 @@ public sealed class ApiClient(HttpClient http)
         if (query.CategoryId.HasValue)
         {
             parameters.Add($"categoryId={query.CategoryId}");
+        }
+
+        if (query.PayerId.HasValue)
+        {
+            parameters.Add($"payerId={query.PayerId}");
         }
 
         if (query.From.HasValue)

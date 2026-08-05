@@ -1,4 +1,4 @@
-using M2Manager.Api.Configuration;
+﻿using M2Manager.Api.Configuration;
 using M2Manager.Api.Data;
 using M2Manager.Api.Services;
 using M2Manager.Shared;
@@ -14,7 +14,6 @@ public static class InvoiceEndpoints
     public static void MapInvoiceEndpoints(this IEndpointRouteBuilder app)
     {
         MapInvoices(app);
-        MapExpenseCategories(app);
         MapLocalFiles(app);
     }
 
@@ -140,6 +139,7 @@ public static class InvoiceEndpoints
                 await db.Entry(invoice).Reference(i => i.Property).LoadAsync(ct);
                 await db.Entry(invoice).Reference(i => i.Room).LoadAsync(ct);
                 await db.Entry(invoice).Reference(i => i.ExpenseCategory).LoadAsync(ct);
+                await db.Entry(invoice).Reference(i => i.Payer).LoadAsync(ct);
                 await db.Entry(invoice).Collection(i => i.ShoppingItems).LoadAsync(ct);
 
                 var url = await storage.GetViewUrlAsync(objectKey, ct);
@@ -152,6 +152,7 @@ public static class InvoiceEndpoints
             int? propertyId,
             int? roomId,
             int? categoryId,
+            int? payerId,
             DateOnly? from,
             DateOnly? to,
             int? page,
@@ -160,7 +161,7 @@ public static class InvoiceEndpoints
             IObjectStorage storage,
             CancellationToken ct) =>
         {
-            var query = BuildFilteredQuery(db, propertyId, roomId, categoryId, from, to);
+            var query = BuildFilteredQuery(db, propertyId, roomId, categoryId, from, to, payerId);
 
             var totalCount = await query.CountAsync(ct);
 
@@ -196,6 +197,7 @@ public static class InvoiceEndpoints
                 .Include(i => i.Property)
                 .Include(i => i.Room)
                 .Include(i => i.ExpenseCategory)
+                .Include(i => i.Payer)
                 .Include(i => i.ShoppingItems)
                 .AsNoTracking()
                 .FirstOrDefaultAsync(i => i.Id == id, ct);
@@ -226,6 +228,7 @@ public static class InvoiceEndpoints
                 .Include(i => i.Property)
                 .Include(i => i.Room)
                 .Include(i => i.ExpenseCategory)
+                .Include(i => i.Payer)
                 .Include(i => i.ShoppingItems)
                 .FirstOrDefaultAsync(i => i.Id == id, ct);
 
@@ -245,9 +248,15 @@ public static class InvoiceEndpoints
                 return Results.BadRequest(new { message = "Pomieszczenie nie należy do wybranego mieszkania." });
             }
 
+            if (dto.PayerId.HasValue && !await db.Payers.AnyAsync(p => p.Id == dto.PayerId, ct))
+            {
+                return Results.BadRequest(new { message = "Wskazana osoba nie istnieje w słowniku." });
+            }
+
             invoice.PropertyId = dto.PropertyId;
             invoice.RoomId = dto.RoomId;
             invoice.ExpenseCategoryId = dto.ExpenseCategoryId;
+            invoice.PayerId = dto.PayerId;
             invoice.Vendor = string.IsNullOrWhiteSpace(dto.Vendor) ? null : dto.Vendor.Trim();
             invoice.Amount = dto.Amount;
             invoice.Currency = string.IsNullOrWhiteSpace(dto.Currency) ? "PLN" : dto.Currency.Trim().ToUpperInvariant();
@@ -332,6 +341,9 @@ public static class InvoiceEndpoints
                     PropertyId = invoice.PropertyId,
                     RoomId = roomId,
                     ShoppingCategoryId = categoryId,
+
+                    // Kto zapłacił fakturę, ten finansuje wszystkie jej pozycje.
+                    PayerId = invoice.PayerId,
                     Name = line.Name.Trim(),
                     Quantity = line.Quantity,
                     Unit = string.IsNullOrWhiteSpace(line.Unit) ? null : line.Unit.Trim(),
@@ -389,84 +401,6 @@ public static class InvoiceEndpoints
         });
     }
 
-    private static void MapExpenseCategories(IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/expense-categories").RequireAuthorization();
-
-        group.MapGet("/", async (AppDbContext db, CancellationToken ct) =>
-        {
-            var categories = await db.ExpenseCategories
-                .OrderBy(c => c.SortOrder)
-                .ThenBy(c => c.Name)
-                .AsNoTracking()
-                .ToListAsync(ct);
-
-            return Results.Ok(categories.Select(c => c.ToDto()).ToList());
-        });
-
-        group.MapPost("/", async (LookupUpsertDto dto, AppDbContext db, CancellationToken ct) =>
-        {
-            var name = dto.Name?.Trim();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return Results.BadRequest(new { message = "Nazwa kategorii jest wymagana." });
-            }
-
-            if (await db.ExpenseCategories.AnyAsync(c => c.Name == name, ct))
-            {
-                return Results.Conflict(new { message = "Kategoria o tej nazwie już istnieje." });
-            }
-
-            var maxOrder = await db.ExpenseCategories.MaxAsync(c => (int?)c.SortOrder, ct) ?? 0;
-
-            var category = new ExpenseCategory
-            {
-                Name = name,
-                SortOrder = dto.SortOrder > 0 ? dto.SortOrder : maxOrder + 10
-            };
-
-            db.ExpenseCategories.Add(category);
-            await db.SaveChangesAsync(ct);
-
-            return Results.Created($"/api/expense-categories/{category.Id}", category.ToDto());
-        });
-
-        group.MapPut("/{id:int}", async (int id, LookupUpsertDto dto, AppDbContext db, CancellationToken ct) =>
-        {
-            var category = await db.ExpenseCategories.FirstOrDefaultAsync(c => c.Id == id, ct);
-            if (category is null)
-            {
-                return Results.NotFound();
-            }
-
-            var name = dto.Name?.Trim();
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return Results.BadRequest(new { message = "Nazwa kategorii jest wymagana." });
-            }
-
-            category.Name = name;
-            category.SortOrder = dto.SortOrder;
-            await db.SaveChangesAsync(ct);
-
-            return Results.Ok(category.ToDto());
-        });
-
-        group.MapDelete("/{id:int}", async (int id, AppDbContext db, CancellationToken ct) =>
-        {
-            var category = await db.ExpenseCategories.FirstOrDefaultAsync(c => c.Id == id, ct);
-            if (category is null)
-            {
-                return Results.NotFound();
-            }
-
-            // FK ma OnDelete=SetNull — faktury zostają, tracą tylko kategorię.
-            db.ExpenseCategories.Remove(category);
-            await db.SaveChangesAsync(ct);
-
-            return Results.NoContent();
-        });
-    }
 
     /// <summary>Serwowanie zdjęć w trybie lokalnym (bez R2). Przy R2 klient dostaje presigned URL i tu nie trafia.</summary>
     private static void MapLocalFiles(IEndpointRouteBuilder app)
@@ -496,12 +430,14 @@ public static class InvoiceEndpoints
         int? roomId,
         int? categoryId,
         DateOnly? from,
-        DateOnly? to)
+        DateOnly? to,
+        int? payerId = null)
     {
         var query = db.Invoices
             .Include(i => i.Property)
             .Include(i => i.Room)
             .Include(i => i.ExpenseCategory)
+            .Include(i => i.Payer)
             .Include(i => i.ShoppingItems)
             .AsQueryable();
 
@@ -523,6 +459,11 @@ public static class InvoiceEndpoints
         if (categoryId.HasValue)
         {
             query = query.Where(i => i.ExpenseCategoryId == categoryId);
+        }
+
+        if (payerId.HasValue)
+        {
+            query = query.Where(i => i.PayerId == payerId);
         }
 
         if (from.HasValue)

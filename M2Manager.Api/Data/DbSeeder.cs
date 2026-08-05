@@ -115,12 +115,37 @@ public static class DbSeeder
         "Inny sklep"
     ];
 
+    /// <summary>Osoby finansujące — punkt wyjścia do podziału kosztów.</summary>
+    private static readonly string[] PayerNames =
+    [
+        "Kuba", "Zuzia", "Rodzice Kuby", "Rodzice Zuzi", "Wspólne"
+    ];
+
     public static async Task SeedAsync(AppDbContext db, CancellationToken ct = default)
     {
         await SeedExpenseCategoriesAsync(db, ct);
         await SeedShoppingCategoriesAsync(db, ct);
         await SeedShopsAsync(db, ct);
+        await SeedPayersAsync(db, ct);
         await SeedPropertiesAsync(db, ct);
+    }
+
+    /// <summary>Jak przy sklepach — dosypujemy tylko do pustej tabeli, żeby usunięte nie wracały.</summary>
+    private static async Task SeedPayersAsync(AppDbContext db, CancellationToken ct)
+    {
+        if (await db.Payers.AnyAsync(ct))
+        {
+            return;
+        }
+
+        var order = 0;
+        foreach (var name in PayerNames)
+        {
+            order += 10;
+            db.Payers.Add(new Payer { Name = name, SortOrder = order });
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

@@ -66,14 +66,40 @@ public class RoomOpening : IOpeningAreaSource
     public string? Notes { get; set; }
 }
 
+/// <summary>
+/// Wspólny kształt prostych słowników (id + nazwa + kolejność). Pozwala obsłużyć
+/// kategorie i osoby jednym zestawem endpointów zamiast trzema kopiami tego samego kodu.
+/// </summary>
+public interface ILookupEntity
+{
+    int Id { get; set; }
+    string Name { get; set; }
+    int SortOrder { get; set; }
+}
+
 /// <summary>Kategoria wydatku (dotyczy faktur).</summary>
-public class ExpenseCategory
+public class ExpenseCategory : ILookupEntity
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public int SortOrder { get; set; }
 
     public ICollection<Invoice> Invoices { get; set; } = [];
+}
+
+/// <summary>
+/// Osoba finansująca wydatek — podstawa podziału kosztów między domownikami i rodzinami.
+/// Świadomie osobno od „kto kupuje”: kupić może jedna osoba, a zapłacić druga.
+/// </summary>
+public class Payer : ILookupEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+    public string? Notes { get; set; }
+
+    public ICollection<Invoice> Invoices { get; set; } = [];
+    public ICollection<ShoppingItem> ShoppingItems { get; set; } = [];
 }
 
 /// <summary>Faktura albo paragon wraz ze zdjęciem w R2.</summary>
@@ -89,6 +115,11 @@ public class Invoice
 
     public int? ExpenseCategoryId { get; set; }
     public ExpenseCategory? ExpenseCategory { get; set; }
+
+    /// <summary>Kto pokrył ten wydatek — podstawa podziału kosztów.</summary>
+    public int? PayerId { get; set; }
+
+    public Payer? Payer { get; set; }
 
     public string? Vendor { get; set; }
     public decimal? Amount { get; set; }
@@ -128,7 +159,7 @@ public class Shop
 }
 
 /// <summary>Kategoria listy zakupów — słownik niezależny od kategorii faktur.</summary>
-public class ShoppingCategory
+public class ShoppingCategory : ILookupEntity
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -155,6 +186,11 @@ public class ShoppingItem
 
     public int? ShoppingCategoryId { get; set; }
     public ShoppingCategory? ShoppingCategory { get; set; }
+
+    /// <summary>Kto finansuje tę pozycję. Niezależne od AssignedTo, czyli od tego, kto ją kupuje.</summary>
+    public int? PayerId { get; set; }
+
+    public Payer? Payer { get; set; }
 
     public string Name { get; set; } = string.Empty;
     public string? Description { get; set; }

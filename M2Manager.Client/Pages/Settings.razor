@@ -37,6 +37,14 @@ else
                     OnCreate="CreateShoppingCategoryAsync"
                     OnUpdate="UpdateShoppingCategoryAsync"
                     OnDelete="DeleteShoppingCategoryAsync" />
+
+        <LookupGrid Title="Podział kosztów — kto finansuje"
+                    Description="Osoby i rodziny pokrywające wydatki. Pojawiają się przy fakturach i pozycjach listy zakupów, a raporty pokazują, kto ile włożył."
+                    NewPlaceholder="np. Babcia Krysia"
+                    Items="_payers"
+                    OnCreate="CreatePayerAsync"
+                    OnUpdate="UpdatePayerAsync"
+                    OnDelete="DeletePayerAsync" />
     </div>
 
     @* ---------------------------------------------------------------- sklepy *@
@@ -102,6 +110,7 @@ else
 @code {
     private List<LookupDto> _expenseCategories = [];
     private List<LookupDto> _shoppingCategories = [];
+    private List<LookupDto> _payers = [];
     private List<ShopDto> _shops = [];
 
     private string _newShopName = string.Empty;
@@ -133,7 +142,28 @@ else
     {
         _expenseCategories = await State.GetExpenseCategoriesAsync(refresh: true);
         _shoppingCategories = await State.GetShoppingCategoriesAsync(refresh: true);
+        _payers = await State.GetPayersAsync(refresh: true);
         _shops = await State.GetShopsAsync(refresh: true);
+    }
+
+    // ---------------------------------------------------------------- osoby finansujące
+
+    private async Task CreatePayerAsync(LookupUpsertDto dto)
+    {
+        await Api.CreatePayerAsync(dto);
+        _payers = await State.GetPayersAsync(refresh: true);
+    }
+
+    private async Task UpdatePayerAsync(int id, LookupUpsertDto dto)
+    {
+        await Api.UpdatePayerAsync(id, dto);
+        _payers = await State.GetPayersAsync(refresh: true);
+    }
+
+    private async Task DeletePayerAsync(LookupDto item)
+    {
+        await Api.DeletePayerAsync(item.Id);
+        _payers = await State.GetPayersAsync(refresh: true);
     }
 
     // ---------------------------------------------------------------- kategorie faktur

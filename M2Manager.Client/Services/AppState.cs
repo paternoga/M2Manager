@@ -12,6 +12,7 @@ public sealed class AppState(ApiClient api)
     private List<LookupDto>? _expenseCategories;
     private List<LookupDto>? _shoppingCategories;
     private List<ShopDto>? _shops;
+    private List<LookupDto>? _payers;
     private readonly Dictionary<int, List<RoomDto>> _roomsByProperty = [];
 
     public event Action? Changed;
@@ -71,6 +72,11 @@ public sealed class AppState(ApiClient api)
             ? await api.GetShopsAsync()
             : _shops;
 
+    public async Task<List<LookupDto>> GetPayersAsync(bool refresh = false) =>
+        _payers = refresh || _payers is null
+            ? await api.GetPayersAsync()
+            : _payers;
+
     /// <summary>Czyści cache — wołane po wylogowaniu i po zmianach w słownikach.</summary>
     public void Invalidate()
     {
@@ -78,6 +84,7 @@ public sealed class AppState(ApiClient api)
         _expenseCategories = null;
         _shoppingCategories = null;
         _shops = null;
+        _payers = null;
         _roomsByProperty.Clear();
     }
 

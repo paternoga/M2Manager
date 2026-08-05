@@ -98,6 +98,8 @@ public static class Mapping
         RoomName = i.Room?.Name,
         ExpenseCategoryId = i.ExpenseCategoryId,
         ExpenseCategoryName = i.ExpenseCategory?.Name,
+        PayerId = i.PayerId,
+        PayerName = i.Payer?.Name,
         Vendor = i.Vendor,
         Amount = i.Amount,
         Currency = i.Currency,
@@ -143,6 +145,8 @@ public static class Mapping
         RoomName = s.Room?.Name ?? ShoppingConstants.WholePropertyRoomName,
         ShoppingCategoryId = s.ShoppingCategoryId,
         CategoryName = s.ShoppingCategory?.Name,
+        PayerId = s.PayerId,
+        PayerName = s.Payer?.Name,
         Name = s.Name,
         Description = s.Description,
         CalculationNotes = s.CalculationNotes,
@@ -169,6 +173,7 @@ public static class Mapping
         s.PropertyId = dto.PropertyId;
         s.RoomId = dto.RoomId;
         s.ShoppingCategoryId = dto.ShoppingCategoryId;
+        s.PayerId = dto.PayerId;
         s.Name = dto.Name.Trim();
         s.Description = Clean(dto.Description);
         s.CalculationNotes = Clean(dto.CalculationNotes);
