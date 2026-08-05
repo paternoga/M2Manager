@@ -551,6 +551,18 @@ table.data tr.total-row td {
 .editable-cell { cursor: text; min-height: 1.2rem; display: block; }
 .editable-cell:hover { outline: 1px dashed var(--border); outline-offset: 2px; }
 
+/* Tabela pozycji faktury — pola edycyjne w komórkach muszą być ciaśniejsze niż w formularzach. */
+.line-items table.data td { vertical-align: middle; }
+
+.line-items table.data input:not([type=checkbox]),
+.line-items table.data select {
+    padding: .3rem .4rem;
+    font-size: .85rem;
+    border-radius: 6px;
+}
+
+.line-items table.data input[type=number] { text-align: right; }
+
 /* karty zamiast tabeli na telefonie */
 
 .item-card {

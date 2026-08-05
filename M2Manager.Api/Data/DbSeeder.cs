@@ -88,11 +88,60 @@ public static class DbSeeder
         "Rośliny"
     ];
 
+    /// <summary>
+    /// Sklepy i wykonawcy podpowiadani przy fakturach. Lista startowa pod remont —
+    /// resztę dopiszesz sam w Ustawieniach, a te, których nie używasz, po prostu usuniesz.
+    /// </summary>
+    private static readonly string[] ShopNames =
+    [
+        // markety budowlane
+        "Leroy Merlin", "Castorama", "OBI", "Bricomarché", "PSB Mrówka", "Merkury Market", "Bricoman",
+
+        // wykończenie i podłogi
+        "Komfort",
+
+        // meble
+        "IKEA", "Agata Meble", "Black Red White", "JYSK",
+
+        // AGD i RTV
+        "Media Expert", "RTV Euro AGD", "Media Markt",
+
+        // zakupy online
+        "Allegro", "OLX", "Amazon",
+
+        // wykonawcy — pod kategorię „Usługi / robocizna”
+        "Glazurnik", "Hydraulik", "Elektryk", "Malarz", "Stolarz",
+
+        "Inny sklep"
+    ];
+
     public static async Task SeedAsync(AppDbContext db, CancellationToken ct = default)
     {
         await SeedExpenseCategoriesAsync(db, ct);
         await SeedShoppingCategoriesAsync(db, ct);
+        await SeedShopsAsync(db, ct);
         await SeedPropertiesAsync(db, ct);
+    }
+
+    /// <summary>
+    /// Sklepy dokładamy tylko wtedy, gdy tabela jest pusta. Inaczej usunięty przez użytkownika
+    /// sklep wracałby przy każdym starcie aplikacji.
+    /// </summary>
+    private static async Task SeedShopsAsync(AppDbContext db, CancellationToken ct)
+    {
+        if (await db.Shops.AnyAsync(ct))
+        {
+            return;
+        }
+
+        var order = 0;
+        foreach (var name in ShopNames)
+        {
+            order += 10;
+            db.Shops.Add(new Shop { Name = name, SortOrder = order });
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task SeedExpenseCategoriesAsync(AppDbContext db, CancellationToken ct)

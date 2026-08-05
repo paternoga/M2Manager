@@ -82,6 +82,26 @@ public sealed class ApiClient(HttpClient http)
     public Task<LookupDto> CreateExpenseCategoryAsync(LookupUpsertDto dto) =>
         PostAsync<LookupUpsertDto, LookupDto>("api/expense-categories", dto);
 
+    public Task<LookupDto> UpdateExpenseCategoryAsync(int id, LookupUpsertDto dto) =>
+        PutAsync<LookupUpsertDto, LookupDto>($"api/expense-categories/{id}", dto);
+
+    public Task DeleteExpenseCategoryAsync(int id) =>
+        SendAsync(HttpMethod.Delete, $"api/expense-categories/{id}");
+
+    // ---------------------------------------------------------------- sklepy
+
+    public Task<List<ShopDto>> GetShopsAsync() =>
+        GetAsync<List<ShopDto>>("api/shops");
+
+    public Task<ShopDto> CreateShopAsync(ShopUpsertDto dto) =>
+        PostAsync<ShopUpsertDto, ShopDto>("api/shops", dto);
+
+    public Task<ShopDto> UpdateShopAsync(int id, ShopUpsertDto dto) =>
+        PutAsync<ShopUpsertDto, ShopDto>($"api/shops/{id}", dto);
+
+    public Task DeleteShopAsync(int id) =>
+        SendAsync(HttpMethod.Delete, $"api/shops/{id}");
+
     public Task<PagedResult<InvoiceDto>> GetInvoicesAsync(InvoiceQuery query)
     {
         var parameters = new List<string> { $"page={query.Page}", $"pageSize={query.PageSize}" };
@@ -179,6 +199,12 @@ public sealed class ApiClient(HttpClient http)
 
     public Task<LookupDto> CreateShoppingCategoryAsync(LookupUpsertDto dto) =>
         PostAsync<LookupUpsertDto, LookupDto>("api/shopping-categories", dto);
+
+    public Task<LookupDto> UpdateShoppingCategoryAsync(int id, LookupUpsertDto dto) =>
+        PutAsync<LookupUpsertDto, LookupDto>($"api/shopping-categories/{id}", dto);
+
+    public Task DeleteShoppingCategoryAsync(int id) =>
+        SendAsync(HttpMethod.Delete, $"api/shopping-categories/{id}");
 
     public async Task<ShoppingImportResultDto> ImportShoppingAsync(
         Stream content,

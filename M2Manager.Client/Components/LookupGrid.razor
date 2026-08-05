@@ -1,0 +1,178 @@
+@inject IJSRuntime Js
+
+@* Edytowalna tabela słownika (nazwa + kolejność). Używana dla kategorii faktur i kategorii zakupów. *@
+
+<div class="card">
+    <div class="card-title">
+        <h2>@Title</h2>
+        <span class="badge">@Items.Count</span>
+    </div>
+
+    <StatusMessage Error="@_error" Success="@_success" />
+
+    @if (!string.IsNullOrWhiteSpace(Description))
+    {
+        <p class="small muted">@Description</p>
+    }
+
+    <div class="table-wrap">
+        <table class="data line-items">
+            <thead>
+            <tr>
+                <th>Nazwa</th>
+                <th style="width:7rem">Kolejność</th>
+                <th style="width:3rem"></th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var row in Items)
+            {
+                var item = row;
+
+                <tr>
+                    <td>
+                        <input type="text" value="@item.Name" @onchange="e => SaveNameAsync(item, e.Value)" />
+                    </td>
+                    <td>
+                        <input type="number" step="10" value="@item.SortOrder"
+                               @onchange="e => SaveOrderAsync(item, e.Value)" />
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-danger btn-icon" title="Usuń"
+                                @onclick="() => DeleteAsync(item)">✕</button>
+                    </td>
+                </tr>
+            }
+            </tbody>
+            <tfoot>
+            <tr>
+                <td>
+                    <input type="text" value="@_newName" placeholder="@NewPlaceholder"
+                           @onchange="e => _newName = e.Value?.ToString() ?? string.Empty"
+                           @onkeydown="OnNewKeyDown" />
+                </td>
+                <td colspan="2">
+                    <button class="btn btn-sm btn-primary" disabled="@_busy" @onclick="CreateAsync">+ Dodaj</button>
+                </td>
+            </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public string NewPlaceholder { get; set; } = "nowa pozycja…";
+    [Parameter, EditorRequired] public List<LookupDto> Items { get; set; } = [];
+
+    [Parameter] public Func<LookupUpsertDto, Task>? OnCreate { get; set; }
+    [Parameter] public Func<int, LookupUpsertDto, Task>? OnUpdate { get; set; }
+    [Parameter] public Func<LookupDto, Task>? OnDelete { get; set; }
+
+    private string _newName = string.Empty;
+    private bool _busy;
+    private string? _error;
+    private string? _success;
+
+    private async Task SaveNameAsync(LookupDto item, object? value)
+    {
+        var name = value?.ToString()?.Trim();
+
+        if (string.IsNullOrWhiteSpace(name) || name == item.Name)
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            if (OnUpdate is not null)
+            {
+                await OnUpdate(item.Id, new LookupUpsertDto { Name = name, SortOrder = item.SortOrder });
+            }
+        }, "Zapisano.");
+    }
+
+    private async Task SaveOrderAsync(LookupDto item, object? value)
+    {
+        if (!int.TryParse(value?.ToString(), out var order) || order == item.SortOrder)
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            if (OnUpdate is not null)
+            {
+                await OnUpdate(item.Id, new LookupUpsertDto { Name = item.Name, SortOrder = order });
+            }
+        }, "Zapisano.");
+    }
+
+    private async Task OnNewKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await CreateAsync();
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        var name = _newName.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            _error = "Podaj nazwę.";
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            if (OnCreate is not null)
+            {
+                await OnCreate(new LookupUpsertDto { Name = name });
+            }
+
+            _newName = string.Empty;
+        }, $"Dodano „{name}”.");
+    }
+
+    private async Task DeleteAsync(LookupDto item)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Usunąć „{item.Name}”?"))
+        {
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            if (OnDelete is not null)
+            {
+                await OnDelete(item);
+            }
+        }, $"Usunięto „{item.Name}”.");
+    }
+
+    /// <summary>Wspólna obsługa zajętości i komunikatów — bez tego każda akcja powtarzałaby ten sam blok.</summary>
+    private async Task RunAsync(Func<Task> action, string successMessage)
+    {
+        _busy = true;
+        _error = null;
+        _success = null;
+
+        try
+        {
+            await action();
+            _success = successMessage;
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

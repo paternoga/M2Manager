@@ -1,27 +1,29 @@
 @inject ApiClient Api
 @inject AppState State
 
-@* Pozycje odczytane z faktury — każdą można przenieść na listę zakupów jako osobny wiersz. *@
+@* Pozycje odczytane z faktury — każdą można poprawić i przenieść na listę zakupów jako osobny wiersz. *@
 
-@if (Invoice.LineItems.Count == 0)
-{
-    @if (Invoice.OcrStatus == OcrStatus.Extracted)
-    {
-        <div class="card">
-            <div class="card-title"><h2>Pozycje z faktury</h2></div>
-            <p class="small muted" style="margin:0">
-                AI nie wyodrębniło pojedynczych pozycji — dokument pokazuje zapewne tylko kwotę łączną.
-                Pozycje dodasz ręcznie na liście zakupów.
-            </p>
-        </div>
-    }
-}
-else
+@if (_items.Count == 0)
 {
     <div class="card">
         <div class="card-title">
             <h2>Pozycje z faktury</h2>
-            <span class="badge badge-info">@Invoice.LineItems.Count odczytanych</span>
+            <button class="btn btn-sm" @onclick="AddEmptyRow">+ Dodaj pozycję ręcznie</button>
+        </div>
+        <p class="small muted" style="margin:0">
+            @(Invoice.OcrStatus == OcrStatus.Extracted
+                ? "AI nie wyodrębniło pojedynczych pozycji — dokument pokazuje zapewne tylko kwotę łączną."
+                : "Brak odczytanych pozycji.")
+            Możesz dopisać je ręcznie.
+        </p>
+    </div>
+}
+else
+{
+    <div class="card line-items">
+        <div class="card-title">
+            <h2>Pozycje z faktury</h2>
+            <span class="badge badge-info">@_items.Count poz.</span>
         </div>
 
         <StatusMessage Error="@_error" Success="@_success" />
@@ -35,8 +37,8 @@ else
         }
 
         <p class="small muted">
-            Zaznacz, co ma trafić na listę zakupów. Każda pozycja powstanie osobno,
-            ze statusem „Kupione”, rzeczywistym kosztem i podpiętą fakturą.
+            Wszystko możesz poprawić przed dodaniem — AI bywa nieprecyzyjne przy długich nazwach i cenach.
+            Zmiana ilości albo ceny jednostkowej przelicza wartość automatycznie.
         </p>
 
         <div class="table-wrap">
@@ -46,46 +48,64 @@ else
                     <th style="width:2rem">
                         <input type="checkbox" checked="@AllSelected" @onchange="ToggleAll" title="Zaznacz wszystkie" />
                     </th>
-                    <th>Pozycja</th>
-                    <th class="num">Ilość</th>
-                    <th class="num">Cena szt.</th>
-                    <th class="num">Wartość</th>
-                    <th>Kategoria</th>
+                    <th style="min-width:16rem">Pozycja</th>
+                    <th style="width:5.5rem">Ilość</th>
+                    <th style="width:5rem">Jedn.</th>
+                    <th style="width:6.5rem">Cena szt.</th>
+                    <th style="width:7rem">Wartość</th>
+                    <th style="width:9rem">Kategoria</th>
+                    <th style="width:2.5rem"></th>
                 </tr>
                 </thead>
                 <tbody>
-                @for (var i = 0; i < Invoice.LineItems.Count; i++)
+                @foreach (var row in _items)
                 {
-                    var index = i;
-                    var line = Invoice.LineItems[index];
+                    var item = row;
 
                     <tr>
                         <td>
-                            <input type="checkbox" checked="@_selected.Contains(index)"
-                                   @onchange="e => Toggle(index, e.Value is true)" />
+                            <input type="checkbox" checked="@_selected.Contains(item)"
+                                   @onchange="e => Toggle(item, e.Value is true)" />
                         </td>
-                        <td>@line.Name</td>
-                        <td class="num">@Fmt.Quantity(line.Quantity) @line.Unit</td>
-                        <td class="num">@Fmt.MoneyShort(line.UnitPrice)</td>
-                        <td class="num"><strong>@Fmt.MoneyShort(line.TotalPrice)</strong></td>
                         <td>
-                            @if (string.IsNullOrWhiteSpace(line.SuggestedCategoryName))
-                            {
-                                <span class="muted small">—</span>
-                            }
-                            else
-                            {
-                                <span class="badge">@line.SuggestedCategoryName</span>
-                            }
+                            <input type="text" value="@item.Name" @onchange="e => SetName(item, e.Value)" />
+                        </td>
+                        <td>
+                            <input type="number" step="0.001" value="@item.Quantity"
+                                   @onchange="e => SetQuantity(item, e.Value)" />
+                        </td>
+                        <td>
+                            <input type="text" value="@item.Unit" placeholder="szt." @onchange="e => SetUnit(item, e.Value)" />
+                        </td>
+                        <td>
+                            <input type="number" step="0.01" value="@item.UnitPrice"
+                                   @onchange="e => SetUnitPrice(item, e.Value)" />
+                        </td>
+                        <td>
+                            <input type="number" step="0.01" value="@item.TotalPrice"
+                                   @onchange="e => SetTotalPrice(item, e.Value)" />
+                        </td>
+                        <td>
+                            <select value="@(item.SuggestedCategoryName ?? "")" @onchange="e => SetCategory(item, e.Value)">
+                                <option value="">— bez kategorii —</option>
+                                @foreach (var category in _categories)
+                                {
+                                    <option value="@category.Name">@category.Name</option>
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-danger btn-icon" title="Usuń wiersz"
+                                    @onclick="() => RemoveRow(item)">✕</button>
                         </td>
                     </tr>
                 }
                 </tbody>
                 <tfoot>
                 <tr class="total-row">
-                    <td colspan="4">Zaznaczono @_selected.Count z @Invoice.LineItems.Count</td>
+                    <td colspan="5">Zaznaczono @_selected.Count z @_items.Count</td>
                     <td class="num">@Fmt.MoneyShort(SelectedTotal)</td>
-                    <td></td>
+                    <td colspan="2"></td>
                 </tr>
                 </tfoot>
             </table>
@@ -128,6 +148,7 @@ else
             <button class="btn btn-primary" disabled="@(_busy || _selected.Count == 0)" @onclick="AddSelectedAsync">
                 @(_busy ? "Dodawanie…" : $"➕ Dodaj {_selected.Count} poz. do listy zakupów")
             </button>
+            <button class="btn" @onclick="AddEmptyRow">+ Dodaj pozycję ręcznie</button>
             <a class="btn" href="@($"zakupy?mieszkanie={Invoice.PropertyId}")">Otwórz listę zakupów</a>
         </div>
     </div>
@@ -137,8 +158,13 @@ else
     [Parameter, EditorRequired] public InvoiceDto Invoice { get; set; } = default!;
     [Parameter] public EventCallback OnAdded { get; set; }
 
-    private readonly HashSet<int> _selected = [];
+    // Pracujemy na kopii referencji, a zaznaczenie trzymamy po obiekcie, nie po indeksie —
+    // dzięki temu usunięcie wiersza nie rozjeżdża zaznaczenia pozostałych.
+    private readonly List<OcrLineItemDto> _items = [];
+    private readonly HashSet<OcrLineItemDto> _selected = [];
+
     private List<RoomDto> _rooms = [];
+    private List<LookupDto> _categories = [];
     private int? _roomId;
     private ShoppingStatus _status = ShoppingStatus.Bought;
     private bool _busy;
@@ -146,11 +172,11 @@ else
     private string? _success;
     private int _loadedInvoiceId = -1;
 
-    private bool AllSelected => Invoice.LineItems.Count > 0 && _selected.Count == Invoice.LineItems.Count;
+    private bool AllSelected => _items.Count > 0 && _selected.Count == _items.Count;
 
-    private decimal SelectedTotal => _selected.Sum(i => Invoice.LineItems[i].TotalPrice ?? 0m);
+    private decimal SelectedTotal => _selected.Sum(i => i.TotalPrice ?? 0m);
 
-    private decimal LineItemsTotal => Invoice.LineItems.Sum(l => l.TotalPrice ?? 0m);
+    private decimal LineItemsTotal => _items.Sum(l => l.TotalPrice ?? 0m);
 
     /// <summary>Różnica większa niż grosz sugeruje, że model pominął jakiś wiersz.</summary>
     private decimal? SumMismatch
@@ -178,11 +204,13 @@ else
         _error = null;
         _success = null;
 
-        // Domyślnie zaznaczamy wszystko — częściej dodaje się całą fakturę niż jej wycinek.
+        _items.Clear();
         _selected.Clear();
-        for (var i = 0; i < Invoice.LineItems.Count; i++)
+
+        foreach (var line in Invoice.LineItems)
         {
-            _selected.Add(i);
+            _items.Add(line);
+            _selected.Add(line); // domyślnie wszystko zaznaczone — częściej dodaje się całą fakturę
         }
 
         _roomId = Invoice.RoomId;
@@ -190,6 +218,7 @@ else
         try
         {
             _rooms = Invoice.PropertyId > 0 ? await State.GetRoomsAsync(Invoice.PropertyId) : [];
+            _categories = await State.GetShoppingCategoriesAsync();
         }
         catch (ApiException ex)
         {
@@ -197,23 +226,70 @@ else
         }
     }
 
-    private void OnRoomChanged(ChangeEventArgs e) =>
-        _roomId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+    // ---------------------------------------------------------------- edycja wierszy
 
-    private void OnStatusChanged(ChangeEventArgs e) =>
-        _status = Enum.TryParse<ShoppingStatus>(e.Value?.ToString(), out var status)
-            ? status
-            : ShoppingStatus.Bought;
+    private static void SetName(OcrLineItemDto item, object? value) =>
+        item.Name = value?.ToString()?.Trim() ?? string.Empty;
 
-    private void Toggle(int index, bool selected)
+    private static void SetUnit(OcrLineItemDto item, object? value)
+    {
+        var text = value?.ToString()?.Trim();
+        item.Unit = string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static void SetCategory(OcrLineItemDto item, object? value)
+    {
+        var text = value?.ToString();
+        item.SuggestedCategoryName = string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+
+    private static void SetQuantity(OcrLineItemDto item, object? value)
+    {
+        item.Quantity = ParseNullable(value);
+        Recalculate(item);
+    }
+
+    private static void SetUnitPrice(OcrLineItemDto item, object? value)
+    {
+        item.UnitPrice = ParseNullable(value);
+        Recalculate(item);
+    }
+
+    /// <summary>Ręcznie wpisana wartość jest ostateczna — nie przeliczamy jej z ilości.</summary>
+    private static void SetTotalPrice(OcrLineItemDto item, object? value) =>
+        item.TotalPrice = ParseNullable(value);
+
+    private static void Recalculate(OcrLineItemDto item)
+    {
+        if (item is { Quantity: not null, UnitPrice: not null })
+        {
+            item.TotalPrice = Math.Round(
+                item.Quantity.Value * item.UnitPrice.Value, 2, MidpointRounding.AwayFromZero);
+        }
+    }
+
+    private void AddEmptyRow()
+    {
+        var item = new OcrLineItemDto { Name = "Nowa pozycja", Quantity = 1, Unit = "szt." };
+        _items.Add(item);
+        _selected.Add(item);
+    }
+
+    private void RemoveRow(OcrLineItemDto item)
+    {
+        _items.Remove(item);
+        _selected.Remove(item);
+    }
+
+    private void Toggle(OcrLineItemDto item, bool selected)
     {
         if (selected)
         {
-            _selected.Add(index);
+            _selected.Add(item);
         }
         else
         {
-            _selected.Remove(index);
+            _selected.Remove(item);
         }
     }
 
@@ -223,32 +299,48 @@ else
 
         if (e.Value is true)
         {
-            for (var i = 0; i < Invoice.LineItems.Count; i++)
+            foreach (var item in _items)
             {
-                _selected.Add(i);
+                _selected.Add(item);
             }
         }
     }
 
+    // ---------------------------------------------------------------- pozostałe pola
+
+    private void OnRoomChanged(ChangeEventArgs e) =>
+        _roomId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+
+    private void OnStatusChanged(ChangeEventArgs e) =>
+        _status = Enum.TryParse<ShoppingStatus>(e.Value?.ToString(), out var status)
+            ? status
+            : ShoppingStatus.Bought;
+
     private async Task AddSelectedAsync()
     {
+        var items = _items.Where(_selected.Contains).Where(i => !string.IsNullOrWhiteSpace(i.Name)).ToList();
+
+        if (items.Count == 0)
+        {
+            _error = "Zaznaczone pozycje muszą mieć nazwę.";
+            return;
+        }
+
         _busy = true;
         _error = null;
         _success = null;
 
         try
         {
-            var request = new CreateShoppingItemsFromInvoiceRequest
+            var created = await Api.CreateShoppingItemsFromInvoiceAsync(Invoice.Id, new()
             {
                 RoomId = _roomId,
                 Status = _status,
-                Items = _selected.OrderBy(i => i).Select(i => Invoice.LineItems[i]).ToList()
-            };
-
-            var created = await Api.CreateShoppingItemsFromInvoiceAsync(Invoice.Id, request);
+                Items = items
+            });
 
             Invoice.LinkedShoppingItemsCount += created.Count;
-            _success = $"Dodano {created.Count} pozycji do listy zakupów.";
+            _success = $"Dodano {created.Count} poz. do listy zakupów.";
 
             await OnAdded.InvokeAsync();
         }
@@ -260,5 +352,19 @@ else
         {
             _busy = false;
         }
+    }
+
+    private static decimal? ParseNullable(object? value)
+    {
+        var text = value?.ToString();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        return decimal.TryParse(text.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
     }
 }

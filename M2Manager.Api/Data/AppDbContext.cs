@@ -12,6 +12,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<ExpenseCategory> ExpenseCategories => Set<ExpenseCategory>();
     public DbSet<Invoice> Invoices => Set<Invoice>();
     public DbSet<ShoppingCategory> ShoppingCategories => Set<ShoppingCategory>();
+    public DbSet<Shop> Shops => Set<Shop>();
     public DbSet<ShoppingItem> ShoppingItems => Set<ShoppingItem>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -107,6 +108,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.Property(c => c.Name).IsRequired().HasMaxLength(150);
             e.HasIndex(c => c.Name).IsUnique();
+        });
+
+        // ---------- Shop ----------
+        b.Entity<Shop>(e =>
+        {
+            e.Property(s => s.Name).IsRequired().HasMaxLength(200);
+            e.Property(s => s.Url).HasMaxLength(500);
+            e.Property(s => s.Notes).HasMaxLength(500);
+            e.HasIndex(s => s.Name).IsUnique();
         });
 
         // ---------- ShoppingItem ----------

@@ -193,6 +193,7 @@ app.MapAuthEndpoints();
 app.MapPropertyEndpoints();
 app.MapInvoiceEndpoints();
 app.MapShoppingEndpoints();
+app.MapShopEndpoints();
 app.MapReportEndpoints();
 
 // Wszystko, co nie jest API ani plikiem statycznym, obsługuje Blazor (routing po stronie klienta).

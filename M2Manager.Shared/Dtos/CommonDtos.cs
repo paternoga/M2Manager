@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace M2Manager.Shared.Dtos;
 
 /// <summary>Uniwersalna strona wyników.</summary>
@@ -24,6 +26,31 @@ public sealed class LookupDto
 public sealed class LookupUpsertDto
 {
     public string Name { get; set; } = string.Empty;
+    public int SortOrder { get; set; }
+}
+
+/// <summary>Sklep albo wykonawca — słownik podpowiadany przy fakturach.</summary>
+public sealed class ShopDto
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Url { get; set; }
+    public string? Notes { get; set; }
+    public int SortOrder { get; set; }
+}
+
+public sealed class ShopUpsertDto
+{
+    [Required(ErrorMessage = "Nazwa sklepu jest wymagana.")]
+    [StringLength(200)]
+    public string Name { get; set; } = string.Empty;
+
+    [StringLength(500)]
+    public string? Url { get; set; }
+
+    [StringLength(500)]
+    public string? Notes { get; set; }
+
     public int SortOrder { get; set; }
 }
 

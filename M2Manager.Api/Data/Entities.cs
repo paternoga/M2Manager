@@ -114,6 +114,19 @@ public class Invoice
     public ICollection<ShoppingItem> ShoppingItems { get; set; } = [];
 }
 
+/// <summary>
+/// Sklep albo wykonawca. Słownik podpowiadany przy fakturach — dzięki niemu „Leroy Merlin”
+/// zapisuje się zawsze tak samo i raporty nie rozjeżdżają się na literówkach.
+/// </summary>
+public class Shop
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? Url { get; set; }
+    public string? Notes { get; set; }
+    public int SortOrder { get; set; }
+}
+
 /// <summary>Kategoria listy zakupów — słownik niezależny od kategorii faktur.</summary>
 public class ShoppingCategory
 {

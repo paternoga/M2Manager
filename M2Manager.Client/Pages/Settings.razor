@@ -1,0 +1,274 @@
+@page "/ustawienia"
+@attribute [Authorize]
+@inject ApiClient Api
+@inject AppState State
+@inject IJSRuntime Js
+
+<PageTitle>Ustawienia — M2Manager</PageTitle>
+
+<div class="page-header">
+    <div>
+        <h1>Słowniki</h1>
+        <p class="muted small">Kategorie i sklepy podpowiadane w całej aplikacji.</p>
+    </div>
+</div>
+
+<StatusMessage Error="@_error" />
+
+@if (_loading)
+{
+    <Loading />
+}
+else
+{
+    <div class="grid-2">
+        <LookupGrid Title="Kategorie faktur"
+                    Description="Używane przy fakturach i w raportach dla banku. Kolejność decyduje o układzie listy — mniejsza liczba wyżej."
+                    NewPlaceholder="np. Ogrzewanie"
+                    Items="_expenseCategories"
+                    OnCreate="CreateExpenseCategoryAsync"
+                    OnUpdate="UpdateExpenseCategoryAsync"
+                    OnDelete="DeleteExpenseCategoryAsync" />
+
+        <LookupGrid Title="Kategorie listy zakupów"
+                    Description="Używane na liście zakupów i przy rozbijaniu faktury na pozycje."
+                    NewPlaceholder="np. Taras"
+                    Items="_shoppingCategories"
+                    OnCreate="CreateShoppingCategoryAsync"
+                    OnUpdate="UpdateShoppingCategoryAsync"
+                    OnDelete="DeleteShoppingCategoryAsync" />
+    </div>
+
+    @* ---------------------------------------------------------------- sklepy *@
+
+    <div class="card">
+        <div class="card-title">
+            <h2>Sklepy i wykonawcy</h2>
+            <span class="badge">@_shops.Count</span>
+        </div>
+
+        <StatusMessage Error="@_shopError" Success="@_shopSuccess" />
+
+        <p class="small muted">
+            Podpowiadane przy fakturze zamiast wpisywania z ręki — dzięki temu „Leroy Merlin”
+            zapisuje się zawsze tak samo i raporty nie rozjeżdżają się na literówkach.
+            Usunięcie sklepu nie zmienia nazw zapisanych już przy fakturach.
+        </p>
+
+        <div class="table-wrap">
+            <table class="data line-items">
+                <thead>
+                <tr>
+                    <th style="min-width:12rem">Nazwa</th>
+                    <th style="min-width:14rem">Strona / link</th>
+                    <th style="min-width:12rem">Notatka</th>
+                    <th style="width:7rem">Kolejność</th>
+                    <th style="width:3rem"></th>
+                </tr>
+                </thead>
+                <tbody>
+                @foreach (var row in _shops)
+                {
+                    var shop = row;
+
+                    <tr>
+                        <td><input type="text" value="@shop.Name" @onchange="e => SaveShopAsync(shop, name: e.Value)" /></td>
+                        <td><input type="url" value="@shop.Url" placeholder="https://…" @onchange="e => SaveShopAsync(shop, url: e.Value)" /></td>
+                        <td><input type="text" value="@shop.Notes" @onchange="e => SaveShopAsync(shop, notes: e.Value)" /></td>
+                        <td><input type="number" step="10" value="@shop.SortOrder" @onchange="e => SaveShopAsync(shop, order: e.Value)" /></td>
+                        <td>
+                            <button class="btn btn-sm btn-danger btn-icon" title="Usuń"
+                                    @onclick="() => DeleteShopAsync(shop)">✕</button>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+                <tfoot>
+                <tr>
+                    <td><input type="text" value="@_newShopName" placeholder="np. Castorama"
+                               @onchange="e => _newShopName = e.Value?.ToString() ?? string.Empty" /></td>
+                    <td><input type="url" value="@_newShopUrl" placeholder="https://…"
+                               @onchange="e => _newShopUrl = e.Value?.ToString() ?? string.Empty" /></td>
+                    <td colspan="3">
+                        <button class="btn btn-sm btn-primary" disabled="@_shopBusy" @onclick="CreateShopAsync">+ Dodaj sklep</button>
+                    </td>
+                </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+}
+
+@code {
+    private List<LookupDto> _expenseCategories = [];
+    private List<LookupDto> _shoppingCategories = [];
+    private List<ShopDto> _shops = [];
+
+    private string _newShopName = string.Empty;
+    private string _newShopUrl = string.Empty;
+
+    private bool _loading = true;
+    private bool _shopBusy;
+    private string? _error;
+    private string? _shopError;
+    private string? _shopSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await ReloadAllAsync();
+        }
+        catch (ApiException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        _expenseCategories = await State.GetExpenseCategoriesAsync(refresh: true);
+        _shoppingCategories = await State.GetShoppingCategoriesAsync(refresh: true);
+        _shops = await State.GetShopsAsync(refresh: true);
+    }
+
+    // ---------------------------------------------------------------- kategorie faktur
+
+    private async Task CreateExpenseCategoryAsync(LookupUpsertDto dto)
+    {
+        await Api.CreateExpenseCategoryAsync(dto);
+        _expenseCategories = await State.GetExpenseCategoriesAsync(refresh: true);
+    }
+
+    private async Task UpdateExpenseCategoryAsync(int id, LookupUpsertDto dto)
+    {
+        await Api.UpdateExpenseCategoryAsync(id, dto);
+        _expenseCategories = await State.GetExpenseCategoriesAsync(refresh: true);
+    }
+
+    private async Task DeleteExpenseCategoryAsync(LookupDto item)
+    {
+        await Api.DeleteExpenseCategoryAsync(item.Id);
+        _expenseCategories = await State.GetExpenseCategoriesAsync(refresh: true);
+    }
+
+    // ---------------------------------------------------------------- kategorie zakupów
+
+    private async Task CreateShoppingCategoryAsync(LookupUpsertDto dto)
+    {
+        await Api.CreateShoppingCategoryAsync(dto);
+        _shoppingCategories = await State.GetShoppingCategoriesAsync(refresh: true);
+    }
+
+    private async Task UpdateShoppingCategoryAsync(int id, LookupUpsertDto dto)
+    {
+        await Api.UpdateShoppingCategoryAsync(id, dto);
+        _shoppingCategories = await State.GetShoppingCategoriesAsync(refresh: true);
+    }
+
+    private async Task DeleteShoppingCategoryAsync(LookupDto item)
+    {
+        await Api.DeleteShoppingCategoryAsync(item.Id);
+        _shoppingCategories = await State.GetShoppingCategoriesAsync(refresh: true);
+    }
+
+    // ---------------------------------------------------------------- sklepy
+
+    /// <summary>Jedna metoda dla wszystkich kolumn — zmieniamy tylko to pole, które przyszło.</summary>
+    private async Task SaveShopAsync(
+        ShopDto shop,
+        object? name = null,
+        object? url = null,
+        object? notes = null,
+        object? order = null)
+    {
+        var dto = new ShopUpsertDto
+        {
+            Name = name?.ToString()?.Trim() is { Length: > 0 } newName ? newName : shop.Name,
+            Url = url is not null ? Clean(url) : shop.Url,
+            Notes = notes is not null ? Clean(notes) : shop.Notes,
+            SortOrder = order is not null && int.TryParse(order.ToString(), out var parsed) ? parsed : shop.SortOrder
+        };
+
+        _shopError = null;
+        _shopSuccess = null;
+
+        try
+        {
+            await Api.UpdateShopAsync(shop.Id, dto);
+            _shops = await State.GetShopsAsync(refresh: true);
+            _shopSuccess = "Zapisano.";
+        }
+        catch (ApiException ex)
+        {
+            _shopError = ex.Message;
+            _shops = await State.GetShopsAsync(refresh: true);
+        }
+    }
+
+    private async Task CreateShopAsync()
+    {
+        var name = _newShopName.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            _shopError = "Podaj nazwę sklepu.";
+            return;
+        }
+
+        _shopBusy = true;
+        _shopError = null;
+        _shopSuccess = null;
+
+        try
+        {
+            await Api.CreateShopAsync(new ShopUpsertDto
+            {
+                Name = name,
+                Url = string.IsNullOrWhiteSpace(_newShopUrl) ? null : _newShopUrl.Trim()
+            });
+
+            _newShopName = string.Empty;
+            _newShopUrl = string.Empty;
+            _shops = await State.GetShopsAsync(refresh: true);
+            _shopSuccess = $"Dodano „{name}”.";
+        }
+        catch (ApiException ex)
+        {
+            _shopError = ex.Message;
+        }
+        finally
+        {
+            _shopBusy = false;
+        }
+    }
+
+    private async Task DeleteShopAsync(ShopDto shop)
+    {
+        if (!await Js.InvokeAsync<bool>("confirm", $"Usunąć sklep „{shop.Name}”?"))
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.DeleteShopAsync(shop.Id);
+            _shops = await State.GetShopsAsync(refresh: true);
+            _shopSuccess = $"Usunięto „{shop.Name}”.";
+        }
+        catch (ApiException ex)
+        {
+            _shopError = ex.Message;
+        }
+    }
+
+    private static string? Clean(object? value)
+    {
+        var text = value?.ToString()?.Trim();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
+    }
+}
