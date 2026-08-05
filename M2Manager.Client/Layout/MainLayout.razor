@@ -17,8 +17,13 @@
 
                 <div class="sidebar-footer">
                     <div class="row-between">
-                        <span>@context.User.Identity?.Name</span>
-                        <button class="btn btn-sm" @onclick="LogoutAsync">Wyloguj</button>
+                        <div class="sidebar-user">
+                            <span class="avatar">@Initial(context.User.Identity?.Name)</span>
+                            <span>@context.User.Identity?.Name</span>
+                        </div>
+                        <button class="btn btn-sm" title="Wyloguj" @onclick="LogoutAsync">
+                            <i class="bi bi-box-arrow-right"></i>
+                        </button>
                     </div>
                 </div>
             </aside>
@@ -31,7 +36,9 @@
                     </a>
                     <div class="btn-row">
                         <a class="btn btn-sm" href="ustawienia" title="Słowniki"><i class="bi bi-gear"></i></a>
-                        <button class="btn btn-sm" @onclick="LogoutAsync">Wyloguj</button>
+                        <button class="btn btn-sm" title="Wyloguj" @onclick="LogoutAsync">
+                            <i class="bi bi-box-arrow-right"></i>
+                        </button>
                     </div>
                 </header>
 
@@ -49,6 +56,10 @@
 </AuthorizeView>
 
 @code {
+    /// <summary>Pierwsza litera loginu do awatara w stopce menu.</summary>
+    private static string Initial(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[..1];
+
     private async Task LogoutAsync()
     {
         try

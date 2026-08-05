@@ -33,25 +33,33 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --accent: #7db4e8;
-        --accent-strong: #9ccbf4;
-        --accent-soft: #1b2b3b;
-        --accent-fill: #2f6fad;
-        --accent-fill-hover: #3b82c4;
+        /*
+           Ciepła szarość zamiast granatowej czerni — mniej męczy oczy przy długim
+           siedzeniu w tabelach, a tekst w odcieniu kości słoniowej daje wysoki kontrast
+           bez ostrej bieli.
+        */
+        --bg: #262624;
+        --surface: #30302e;
+        --surface-alt: #3a3a37;
+        --border: #474641;
+        --text: #f0eee6;
+        --text-muted: #a8a49a;
+
+        --accent: #8ab4e8;
+        --accent-strong: #a9c9f2;
+        --accent-soft: #333a41;
+        --accent-fill: #3a6ea5;
+        --accent-fill-hover: #4a81bd;
         --on-accent: #ffffff;
-        --bg: #12161c;
-        --surface: #1a1f27;
-        --surface-alt: #20262f;
-        --border: #2c333d;
-        --text: #e6eaef;
-        --text-muted: #97a1ad;
-        --ok: #62c48d;
-        --ok-soft: #17301f;
-        --warn: #e0a850;
-        --warn-soft: #33270f;
-        --danger: #f08a80;
-        --danger-soft: #35191a;
-        --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+
+        --ok: #6dc48f;
+        --ok-soft: #26352b;
+        --warn: #e0b070;
+        --warn-soft: #3a3226;
+        --danger: #f0928a;
+        --danger-soft: #3b2725;
+
+        --shadow: 0 1px 2px rgba(0, 0, 0, .35), 0 6px 18px rgba(0, 0, 0, .22);
     }
 }
 
@@ -110,11 +118,11 @@ a:hover { text-decoration: underline; }
 .sidebar {
     display: none;
     flex-direction: column;
-    width: 232px;
+    width: 244px;
     flex-shrink: 0;
     background: var(--surface);
     border-right: 1px solid var(--border);
-    padding: 1rem .75rem;
+    padding: 1.1rem .7rem 1rem;
     position: sticky;
     top: 0;
     height: 100vh;
@@ -126,9 +134,10 @@ a:hover { text-decoration: underline; }
     display: flex;
     align-items: center;
     gap: .55rem;
-    padding: .35rem .5rem 1rem;
+    padding: .35rem .5rem 1.15rem;
     font-weight: 700;
     font-size: 1.1rem;
+    letter-spacing: -.01em;
     color: var(--text);
 }
 
@@ -161,7 +170,9 @@ a:hover { text-decoration: underline; }
     justify-content: space-between;
     gap: .75rem;
     padding: .6rem .9rem;
-    background: var(--surface);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
@@ -184,21 +195,27 @@ a:hover { text-decoration: underline; }
 .nav-links {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
 }
 
 .nav-links a {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: .6rem;
-    padding: .55rem .6rem;
-    border-radius: var(--radius-sm);
-    color: var(--text);
+    gap: .7rem;
+    padding: .6rem .7rem;
+    border-radius: 10px;
+    color: var(--text-muted);
     font-weight: 500;
     text-decoration: none;
+    transition: background .15s ease, color .15s ease;
 }
 
-.nav-links a:hover { background: var(--surface-alt); text-decoration: none; }
+.nav-links a:hover {
+    background: var(--surface-alt);
+    color: var(--text);
+    text-decoration: none;
+}
 
 .nav-links a.active {
     background: var(--accent-soft);
@@ -206,7 +223,20 @@ a:hover { text-decoration: underline; }
     font-weight: 600;
 }
 
-.nav-icon { font-size: 1.05rem; width: 1.3rem; text-align: center; }
+/* Pionowy znacznik przy aktywnej pozycji — czytelny sygnał „tu jesteś”. */
+.nav-links a.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 1.15rem;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+}
+
+.nav-icon { font-size: 1.05rem; width: 1.35rem; text-align: center; }
 
 /* Ikony Bootstrap renderują się jako font — lekkie podniesienie wyrównuje je z tekstem. */
 .bi { vertical-align: -.125em; line-height: 1; }
@@ -225,7 +255,11 @@ a:hover { text-decoration: underline; }
     z-index: 30;
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    background: var(--surface);
+
+    /* Półprzezroczyste tło z rozmyciem — treść pod paskiem prześwituje zamiast się urywać. */
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
     border-top: 1px solid var(--border);
     padding-bottom: env(safe-area-inset-bottom);
 }
@@ -235,24 +269,62 @@ a:hover { text-decoration: underline; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 2px;
+    gap: 3px;
     height: var(--nav-height);
-    font-size: .68rem;
+    font-size: .67rem;
+    letter-spacing: .01em;
     color: var(--text-muted);
     text-decoration: none;
+    transition: color .15s ease;
 }
 
 .bottom-nav a:hover { text-decoration: none; }
-.bottom-nav a .nav-icon { font-size: 1.2rem; }
+
+/* Ikona siedzi w „pigułce”, która podświetla się dla aktywnej zakładki. */
+.bottom-nav a .nav-icon {
+    display: grid;
+    place-items: center;
+    width: 2.7rem;
+    height: 1.75rem;
+    border-radius: 999px;
+    font-size: 1.15rem;
+    transition: background .18s ease;
+}
+
 .bottom-nav a.active { color: var(--accent); font-weight: 600; }
+.bottom-nav a.active .nav-icon { background: var(--accent-soft); }
 
 .sidebar-footer {
     margin-top: auto;
-    padding-top: 1rem;
+    padding: .9rem .3rem 0;
     border-top: 1px solid var(--border);
     font-size: .82rem;
     color: var(--text-muted);
 }
+
+/* Zalogowany użytkownik z inicjałem — czytelniej niż sam tekst przy przycisku. */
+.sidebar-user {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    min-width: 0;
+}
+
+.sidebar-user .avatar {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: .72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.sidebar-user span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (min-width: 900px) {
     .sidebar { display: flex; }
