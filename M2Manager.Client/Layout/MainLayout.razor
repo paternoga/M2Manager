@@ -16,6 +16,7 @@
                 <NavMenu />
 
                 <div class="sidebar-footer">
+                    <ThemeSwitcher />
                     <div class="row-between">
                         <div class="sidebar-user">
                             <span class="avatar">@Initial(context.User.Identity?.Name)</span>
@@ -35,6 +36,7 @@
                         <span>M2Manager</span>
                     </a>
                     <div class="btn-row">
+                        <ThemeSwitcher />
                         <a class="btn btn-sm" href="ustawienia" title="Słowniki"><i class="bi bi-gear"></i></a>
                         <button class="btn btn-sm" title="Wyloguj" @onclick="LogoutAsync">
                             <i class="bi bi-box-arrow-right"></i>

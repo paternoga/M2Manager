@@ -23,6 +23,41 @@
     <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png" />
     <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png" />
     <script type="importmap"></script>
+
+    <!--
+      Motyw ustawiamy przed pierwszym malowaniem strony. Gdyby robił to dopiero Blazor,
+      przy trybie ciemnym mignąłby na ułamek sekundy jasny ekran.
+    -->
+    <script>
+        window.m2theme = (function () {
+            const KLUCZ = 'm2manager.theme';
+            const media = window.matchMedia('(prefers-color-scheme: dark)');
+
+            function zapisany() {
+                try { return localStorage.getItem(KLUCZ) || 'auto'; } catch { return 'auto'; }
+            }
+
+            function zastosuj(tryb) {
+                const efektywny = tryb === 'auto' ? (media.matches ? 'dark' : 'light') : tryb;
+                document.documentElement.dataset.theme = efektywny;
+            }
+
+            // Zmiana ustawienia systemu ma skutkować od razu, ale tylko w trybie automatycznym.
+            media.addEventListener('change', () => {
+                if (zapisany() === 'auto') { zastosuj('auto'); }
+            });
+
+            zastosuj(zapisany());
+
+            return {
+                get: zapisany,
+                set: function (tryb) {
+                    try { localStorage.setItem(KLUCZ, tryb); } catch { /* tryb prywatny — trudno */ }
+                    zastosuj(tryb);
+                }
+            };
+        })();
+    </script>
 </head>
 
 <body>

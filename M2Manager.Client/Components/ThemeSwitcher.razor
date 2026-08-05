@@ -1,0 +1,64 @@
+@inject IJSRuntime Js
+
+@* Przełącznik motywu: automatyczny (za systemem), jasny, ciemny. Wybór pamięta przeglądarka. *@
+
+<div class="theme-switch" role="group" aria-label="Motyw">
+    @foreach (var option in Options)
+    {
+        var mode = option;
+
+        <button type="button"
+                class="theme-switch-btn @(_current == mode.Value ? "active" : "")"
+                title="@mode.Title"
+                aria-label="@mode.Title"
+                aria-pressed="@(_current == mode.Value)"
+                @onclick="() => SetAsync(mode.Value)">
+            <i class="bi @mode.Icon"></i>
+        </button>
+    }
+</div>
+
+@code {
+    private sealed record ThemeOption(string Value, string Icon, string Title);
+
+    private static readonly ThemeOption[] Options =
+    [
+        new("auto", "bi-circle-half", "Motyw jak w systemie"),
+        new("light", "bi-sun", "Motyw jasny"),
+        new("dark", "bi-moon", "Motyw ciemny")
+    ];
+
+    private string _current = "auto";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        try
+        {
+            _current = await Js.InvokeAsync<string>("m2theme.get");
+            StateHasChanged();
+        }
+        catch (JSException)
+        {
+            // Brak skryptu motywu nie może wywalić układu strony — zostaje tryb automatyczny.
+        }
+    }
+
+    private async Task SetAsync(string mode)
+    {
+        _current = mode;
+
+        try
+        {
+            await Js.InvokeVoidAsync("m2theme.set", mode);
+        }
+        catch (JSException)
+        {
+            // jw.
+        }
+    }
+}
